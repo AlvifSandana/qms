@@ -27,10 +27,16 @@ func main() {
 
 	store := postgres.NewStore(pool)
 	handler := httpapi.NewHandler(store)
+	limiter := httpapi.NewRateLimiter(httpapi.RateLimitConfig{
+		IPPerMinute:     cfg.RateLimitPerMinute,
+		IPBurst:         cfg.RateLimitBurst,
+		TenantPerMinute: cfg.TenantRateLimitPerMinute,
+		TenantBurst:     cfg.TenantRateLimitBurst,
+	})
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      handler.Routes(),
+		Handler:      limiter.Middleware(handler.Routes()),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

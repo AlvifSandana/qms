@@ -14,6 +14,10 @@ type Config struct {
 	NoShowBatchSize int
 	NoShowReturnToQueue bool
 	PriorityStreakLimit int
+	RateLimitPerMinute int
+	RateLimitBurst int
+	TenantRateLimitPerMinute int
+	TenantRateLimitBurst int
 }
 
 func Load() Config {
@@ -30,6 +34,10 @@ func Load() Config {
 		NoShowBatchSize: readInt("NO_SHOW_BATCH_SIZE", 100),
 		NoShowReturnToQueue: readBool("NO_SHOW_RETURN_TO_QUEUE", false),
 		PriorityStreakLimit: readInt("PRIORITY_STREAK_LIMIT", 3),
+		RateLimitPerMinute: readInt("RATE_LIMIT_PER_MIN", 120),
+		RateLimitBurst: readInt("RATE_LIMIT_BURST", 30),
+		TenantRateLimitPerMinute: readInt("TENANT_RATE_LIMIT_PER_MIN", 600),
+		TenantRateLimitBurst: readInt("TENANT_RATE_LIMIT_BURST", 120),
 	}
 }
 
