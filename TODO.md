@@ -382,7 +382,7 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 
 ## 5.6 Kebijakan “safe defaults”
 - Default tanpa PII; bila tenant mengaktifkan PII, harus ada masking + retention.
-- Default rate limit aktif (minimal).
+- [x] Default rate limit aktif (minimal).
 - Default audit log aktif untuk config + privileged actions.
 
 ## 5.7 Larangan (hard constraints)
