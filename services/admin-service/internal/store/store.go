@@ -45,4 +45,6 @@ type Store interface {
 	CreateApproval(ctx context.Context, approval models.ApprovalRequest) (models.ApprovalRequest, error)
 	ApproveRequest(ctx context.Context, approvalID, approverID string) error
 	ListApprovals(ctx context.Context, tenantID, status string) ([]models.ApprovalRequest, error)
+	GetApproval(ctx context.Context, approvalID string) (models.ApprovalRequest, bool, error)
+	ApprovalsEnabled(ctx context.Context, tenantID string) (bool, error)
 }
