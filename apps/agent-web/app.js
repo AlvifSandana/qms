@@ -32,6 +32,8 @@ const unholdBtn = document.getElementById("unholdBtn");
 const transferBtn = document.getElementById("transferBtn");
 const transferSelect = document.getElementById("transferService");
 let socket = null;
+let reconnectDelay = 1000;
+let reconnectTimer = null;
 
 function setStatus(text) {
   status.textContent = text;
@@ -190,11 +192,16 @@ function connectRealtime() {
   if (!state.queueBase || !state.tenantId) {
     return;
   }
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (socket) {
     socket.close();
   }
   socket = new SockJS(`${state.queueBase}/realtime`);
   socket.onopen = () => {
+    reconnectDelay = 1000;
     const msg = {
       action: "subscribe",
       tenant_id: state.tenantId,
@@ -211,6 +218,28 @@ function connectRealtime() {
       return;
     }
   };
+  socket.onclose = () => {
+    scheduleReconnect();
+  };
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) {
+    return;
+  }
+  const delay = reconnectDelay;
+  reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectRealtime();
+  }, delay);
+}
+
+function sendUnsubscribe() {
+  if (!socket || socket.readyState !== SockJS.OPEN) {
+    return;
+  }
+  socket.send(JSON.stringify({ action: "unsubscribe" }));
 }
 
 function handleRealtimeEvent(event) {
@@ -394,11 +423,13 @@ loginBtn.addEventListener("click", () => {
 });
 
 branchSelect.addEventListener("change", () => {
+  sendUnsubscribe();
   loadServices().catch(() => setStatus("Failed to load services"));
   loadActiveTicket().catch(() => setStatus("Failed to load active ticket"));
 });
 
 refreshBtn.addEventListener("click", () => {
+  sendUnsubscribe();
   refreshQueue().catch(() => setStatus("Failed to load queue"));
   loadActiveTicket().catch(() => setStatus("Failed to load active ticket"));
 });

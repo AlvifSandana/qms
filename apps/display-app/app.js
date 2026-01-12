@@ -31,6 +31,8 @@ let lastAudioAt = 0;
 const audioQueue = [];
 let socket = null;
 let pollInterval = null;
+let reconnectDelay = 1000;
+let reconnectTimer = null;
 const playlistItems = [
   "Welcome to QMS",
   "Please prepare your ID",
@@ -176,6 +178,8 @@ function connect() {
   state.language = langSelect.value;
   state.audioEnabled = audioToggle.value === "on";
 
+  sendUnsubscribe();
+
   if (pollInterval) {
     clearInterval(pollInterval);
     pollInterval = null;
@@ -190,6 +194,10 @@ function connect() {
 }
 
 function connectSockJS() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (socket) {
     socket.close();
   }
@@ -198,6 +206,7 @@ function connectSockJS() {
   socket.onopen = () => {
     setStatus("Live");
     sendDeviceStatus("online");
+    reconnectDelay = 1000;
     const msg = {
       action: "subscribe",
       tenant_id: state.tenantId,
@@ -218,7 +227,27 @@ function connectSockJS() {
     setStatus("Disconnected");
     sendDeviceStatus("offline");
     startPollingFallback();
+    scheduleReconnect();
   };
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) {
+    return;
+  }
+  const delay = reconnectDelay;
+  reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectSockJS();
+  }, delay);
+}
+
+function sendUnsubscribe() {
+  if (!socket || socket.readyState !== SockJS.OPEN) {
+    return;
+  }
+  socket.send(JSON.stringify({ action: "unsubscribe" }));
 }
 
 function startPollingFallback() {
