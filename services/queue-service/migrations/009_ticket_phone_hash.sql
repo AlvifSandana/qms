@@ -1,0 +1,2 @@
+ALTER TABLE tickets
+ADD COLUMN phone_hash TEXT NULL;

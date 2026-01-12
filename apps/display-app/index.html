@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QMS Display</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <p class="eyebrow">Queue Display</p>
+        <h1>Now Calling</h1>
+      </div>
+      <div class="status" id="status">Connecting...</div>
+    </header>
+
+    <section class="card">
+      <h2>Display Config</h2>
+      <div class="grid">
+        <label>
+          Queue Base URL
+          <input id="queueBase" value="http://localhost:8080" />
+        </label>
+        <label>
+          Tenant ID
+          <input id="tenantId" placeholder="UUID" />
+        </label>
+        <label>
+          Branch ID
+          <input id="branchId" placeholder="UUID" />
+        </label>
+        <label>
+          Device ID
+          <input id="deviceId" placeholder="UUID" />
+        </label>
+        <label>
+          Service ID
+          <input id="serviceId" placeholder="UUID" />
+        </label>
+        <label>
+          Language
+          <select id="langSelect">
+            <option value="id">Bahasa</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label>
+          Audio
+          <select id="audioToggle">
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+        <label>
+          Quiet Start (HH:MM)
+          <input id="quietStart" value="21:00" />
+        </label>
+        <label>
+          Quiet End (HH:MM)
+          <input id="quietEnd" value="06:00" />
+        </label>
+        <label>
+          Min Audio Gap (sec)
+          <input id="audioGap" value="5" />
+        </label>
+        <button id="connectBtn">Connect</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Latest Calls</h2>
+      <div class="list" id="callList"></div>
+    </section>
+
+    <section class="card">
+      <h2>Playlist</h2>
+      <div class="playlist" id="playlist">Welcome to QMS</div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+</body>
+</html>

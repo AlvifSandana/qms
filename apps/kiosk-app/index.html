@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QMS Kiosk</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <p class="eyebrow">Self Service Kiosk</p>
+        <h1>Take a Ticket</h1>
+      </div>
+      <div class="status" id="status">Ready</div>
+    </header>
+
+    <section class="card">
+      <h2>Service Selection</h2>
+      <div class="grid">
+        <label>
+          Queue Base URL
+          <input id="queueBase" value="http://localhost:8080" />
+        </label>
+        <label>
+          Tenant ID
+          <input id="tenantId" placeholder="UUID" />
+        </label>
+        <label>
+          Branch ID
+          <input id="branchId" placeholder="UUID" />
+        </label>
+        <label>
+          Device ID
+          <input id="deviceId" placeholder="UUID" />
+        </label>
+        <label>
+          Language
+          <select id="langSelect">
+            <option value="id">Bahasa</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label>
+          Phone Input
+          <select id="phoneToggle">
+            <option value="off">Disabled</option>
+            <option value="on">Enabled</option>
+          </select>
+        </label>
+        <label id="phoneLabel" class="hidden">
+          Phone Number
+          <input id="phoneInput" placeholder="08xxxxxxxxxx" />
+        </label>
+        <label>
+          Service
+          <select id="serviceSelect"></select>
+        </label>
+        <button id="loadBtn">Load Services</button>
+      </div>
+      <div class="toggles">
+        <button id="contrastBtn">High Contrast</button>
+        <button id="fontBtn">Large Text</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Issue Ticket</h2>
+      <div class="actions">
+        <button id="issueBtn">Get Ticket</button>
+        <button id="printBtn" disabled>Print</button>
+      </div>
+      <div class="ticket" id="ticketPanel">
+        <p class="hint">No ticket issued yet.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Appointment Check-in</h2>
+      <div class="grid">
+        <label>
+          Appointment ID / QR
+          <input id="appointmentInput" placeholder="UUID" />
+        </label>
+        <button id="checkinBtn">Check In</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

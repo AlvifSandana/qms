@@ -1,0 +1,2 @@
+ALTER TABLE services
+ADD COLUMN sla_minutes INTEGER NOT NULL DEFAULT 5;

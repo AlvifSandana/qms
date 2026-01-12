@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QMS Agent Console</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <p class="eyebrow">QMS Agent</p>
+        <h1>Queue View</h1>
+      </div>
+      <div class="status" id="status">Not connected</div>
+    </header>
+
+    <section class="card">
+      <h2>Session</h2>
+      <div class="grid">
+        <label>
+          Auth Base URL
+          <input id="authBase" value="http://localhost:8081" />
+        </label>
+        <label>
+          Queue Base URL
+          <input id="queueBase" value="http://localhost:8080" />
+        </label>
+      </div>
+      <div class="grid">
+        <label>
+          Tenant ID
+          <input id="tenantId" placeholder="UUID" />
+        </label>
+        <label>
+          Email
+          <input id="email" type="email" placeholder="agent@example.com" />
+        </label>
+        <label>
+          Password
+          <input id="password" type="password" placeholder="password" />
+        </label>
+        <button id="loginBtn">Login</button>
+      </div>
+      <p class="hint" id="loginHint"></p>
+    </section>
+
+    <section class="card">
+      <h2>Queue Filter</h2>
+      <div class="grid">
+        <label>
+          Branch ID
+          <select id="branchSelect"></select>
+        </label>
+        <label>
+          Counter ID
+          <input id="counterId" placeholder="UUID" />
+        </label>
+        <label>
+          Service
+          <select id="serviceSelect"></select>
+        </label>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Now Serving</h2>
+      <div id="activeTicket" class="ticket empty">No active ticket.</div>
+      <div class="actions">
+        <button id="callNextBtn" data-action="call-next">Call Next</button>
+        <button id="recallBtn" data-action="recall">Recall</button>
+        <button id="startBtn" data-action="start">Start</button>
+        <button id="completeBtn" data-action="complete">Complete</button>
+        <button id="holdBtn" data-action="hold">Hold</button>
+        <button id="unholdBtn" data-action="unhold">Unhold</button>
+      </div>
+      <div class="transfer">
+        <label>
+          Transfer to Service
+          <select id="transferService"></select>
+        </label>
+        <button id="transferBtn" data-action="transfer">Transfer</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Waiting Tickets</h2>
+      <div class="list" id="ticketList"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+</body>
+</html>
