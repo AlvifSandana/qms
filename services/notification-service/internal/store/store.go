@@ -21,6 +21,8 @@ type Notification struct {
 	Status         string
 	Attempts       int
 	LastError      string
+	Message        string
+	NextAttemptAt  *time.Time
 	CreatedAt      time.Time
 }
 
@@ -31,7 +33,9 @@ type Store interface {
 	IsNotificationsEnabled(ctx context.Context, tenantID string) (bool, error)
 	GetTemplate(ctx context.Context, tenantID, templateID, lang, channel string) (string, error)
 	InsertNotification(ctx context.Context, notification Notification) error
+	ListDueNotifications(ctx context.Context, limit int) ([]Notification, error)
 	MarkNotificationSent(ctx context.Context, notificationID string) error
-	MarkNotificationFailed(ctx context.Context, notificationID, lastError string) error
+	MarkNotificationRetry(ctx context.Context, notificationID, lastError string, nextAttemptAt time.Time) (int, error)
+	MarkNotificationFailed(ctx context.Context, notificationID, lastError string) (int, error)
 	InsertDLQ(ctx context.Context, notificationID, reason string) error
 }

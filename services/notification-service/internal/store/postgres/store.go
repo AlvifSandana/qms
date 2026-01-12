@@ -112,28 +112,87 @@ func (s *Store) InsertNotification(ctx context.Context, notification store.Notif
 		notification.NotificationID = uuid.NewString()
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO notifications (notification_id, tenant_id, channel, recipient, status, attempts, last_error)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, notification.NotificationID, notification.TenantID, notification.Channel, notification.Recipient, notification.Status, notification.Attempts, notification.LastError)
+		INSERT INTO notifications (
+			notification_id,
+			tenant_id,
+			channel,
+			recipient,
+			status,
+			attempts,
+			last_error,
+			message,
+			next_attempt_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, notification.NotificationID, notification.TenantID, notification.Channel, notification.Recipient, notification.Status, notification.Attempts, notification.LastError, notification.Message, nullTime(notification.NextAttemptAt))
 	return err
+}
+
+func (s *Store) ListDueNotifications(ctx context.Context, limit int) ([]store.Notification, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT notification_id, tenant_id, channel, recipient, status, attempts, last_error, message, next_attempt_at, created_at
+		FROM notifications
+		WHERE status = 'pending' AND next_attempt_at IS NOT NULL AND next_attempt_at <= NOW()
+		ORDER BY next_attempt_at ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var notifications []store.Notification
+	for rows.Next() {
+		var n store.Notification
+		if err := rows.Scan(&n.NotificationID, &n.TenantID, &n.Channel, &n.Recipient, &n.Status, &n.Attempts, &n.LastError, &n.Message, &n.NextAttemptAt, &n.CreatedAt); err != nil {
+			return nil, err
+		}
+		notifications = append(notifications, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return notifications, nil
 }
 
 func (s *Store) MarkNotificationSent(ctx context.Context, notificationID string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE notifications
-		SET status = 'sent', sent_at = NOW()
+		SET status = 'sent', sent_at = NOW(), last_error = NULL, next_attempt_at = NULL, attempts = attempts + 1
 		WHERE notification_id = $1
 	`, notificationID)
 	return err
 }
 
-func (s *Store) MarkNotificationFailed(ctx context.Context, notificationID, lastError string) error {
-	_, err := s.pool.Exec(ctx, `
+func (s *Store) MarkNotificationRetry(ctx context.Context, notificationID, lastError string, nextAttemptAt time.Time) (int, error) {
+	var attempts int
+	row := s.pool.QueryRow(ctx, `
 		UPDATE notifications
-		SET status = 'failed', last_error = $2
+		SET status = 'pending', last_error = $2, attempts = attempts + 1, next_attempt_at = $3
 		WHERE notification_id = $1
+		RETURNING attempts
+	`, notificationID, lastError, nextAttemptAt)
+	if err := row.Scan(&attempts); err != nil {
+		return 0, err
+	}
+	return attempts, nil
+}
+
+func (s *Store) MarkNotificationFailed(ctx context.Context, notificationID, lastError string) (int, error) {
+	var attempts int
+	row := s.pool.QueryRow(ctx, `
+		UPDATE notifications
+		SET status = 'failed', last_error = $2, attempts = attempts + 1, next_attempt_at = NULL
+		WHERE notification_id = $1
+		RETURNING attempts
 	`, notificationID, lastError)
-	return err
+	if err := row.Scan(&attempts); err != nil {
+		return 0, err
+	}
+	return attempts, nil
 }
 
 func (s *Store) InsertDLQ(ctx context.Context, notificationID, reason string) error {
@@ -142,4 +201,11 @@ func (s *Store) InsertDLQ(ctx context.Context, notificationID, reason string) er
 		VALUES ($1, $2, $3)
 	`, uuid.NewString(), notificationID, reason)
 	return err
+}
+
+func nullTime(value *time.Time) interface{} {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	return *value
 }

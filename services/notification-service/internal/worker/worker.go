@@ -77,6 +77,10 @@ func (w *Worker) Run(ctx context.Context) error {
 			return err
 		}
 	}
+
+	if err := w.processRetries(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -126,29 +130,78 @@ func (w *Worker) processEvent(ctx context.Context, event store.OutboxEvent) erro
 			Channel:   channel.name,
 			Recipient: recipient,
 			Status:    "pending",
-			Attempts:  1,
+			Attempts:  0,
+			Message:   message,
 		}
 		if err := w.store.InsertNotification(ctx, notification); err != nil {
 			return err
 		}
 
-		providerErr := w.send(channel.name, message, recipient)
-		if providerErr != nil {
-			if err := w.store.MarkNotificationFailed(ctx, notification.NotificationID, providerErr.Error()); err != nil {
-				return err
-			}
-			if notification.Attempts >= w.maxAttempts {
-				if err := w.store.InsertDLQ(ctx, notification.NotificationID, "max attempts reached"); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if err := w.store.MarkNotificationSent(ctx, notification.NotificationID); err != nil {
+		if err := w.deliverNotification(ctx, notification); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (w *Worker) processRetries(ctx context.Context) error {
+	notifications, err := w.store.ListDueNotifications(ctx, w.batchSize)
+	if err != nil {
+		return err
+	}
+	for _, notification := range notifications {
+		if err := w.deliverNotification(ctx, notification); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Worker) deliverNotification(ctx context.Context, notification store.Notification) error {
+	if notification.Message == "" {
+		if _, err := w.store.MarkNotificationFailed(ctx, notification.NotificationID, "missing message"); err != nil {
+			return err
+		}
+		if err := w.store.InsertDLQ(ctx, notification.NotificationID, "missing message"); err != nil {
+			return err
+		}
+		return nil
+	}
+	providerErr := w.send(notification.Channel, notification.Message, notification.Recipient)
+	if providerErr != nil {
+		nextAttempts := notification.Attempts + 1
+		if nextAttempts >= w.maxAttempts {
+			if _, err := w.store.MarkNotificationFailed(ctx, notification.NotificationID, providerErr.Error()); err != nil {
+				return err
+			}
+			if err := w.store.InsertDLQ(ctx, notification.NotificationID, "max attempts reached"); err != nil {
+				return err
+			}
+			return nil
+		}
+		nextAttemptAt := time.Now().Add(retryDelay(nextAttempts))
+		if _, err := w.store.MarkNotificationRetry(ctx, notification.NotificationID, providerErr.Error(), nextAttemptAt); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := w.store.MarkNotificationSent(ctx, notification.NotificationID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func retryDelay(attempt int) time.Duration {
+	base := 5 * time.Second
+	if attempt <= 1 {
+		return base
+	}
+	delay := base * time.Duration(1<<uint(attempt-1))
+	max := 5 * time.Minute
+	if delay > max {
+		return max
+	}
+	return delay
 }
 
 func templateForEvent(eventType string) string {
