@@ -368,7 +368,7 @@ func (s *Store) applyNoShow(ctx context.Context, input store.TicketActionInput, 
 	row := tx.QueryRow(ctx, query, input.TicketID, input.TenantID, input.BranchID)
 	if err = row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &ticket.ServiceID, &ticket.BranchID, &ticket.TenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			state, counter, exists, err := loadTicketState(ctx, tx, input.TicketID, input.TenantID, input.BranchID)
+			state, _, exists, err := loadTicketState(ctx, tx, input.TicketID, input.TenantID, input.BranchID)
 			if err != nil {
 				return models.Ticket{}, false, err
 			}
@@ -554,16 +554,32 @@ func (s *Store) CheckInAppointment(ctx context.Context, requestID, tenantID, bra
 	}
 
 	var serviceID string
+	var scheduledDate time.Time
 	row := tx.QueryRow(ctx, `
-		SELECT service_id
+		SELECT service_id, scheduled_at::date
 		FROM appointments
 		WHERE appointment_id = $1 AND tenant_id = $2 AND branch_id = $3 AND status = 'scheduled'
 	`, appointmentID, tenantID, branchID)
-	if err = row.Scan(&serviceID); err != nil {
+	if err = row.Scan(&serviceID, &scheduledDate); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.Ticket{}, store.ErrTicketNotFound
 		}
 		return models.Ticket{}, err
+	}
+
+	var holidayExists bool
+	row = tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM holidays
+			WHERE tenant_id = $1 AND branch_id = $2 AND date = $3
+		)
+	`, tenantID, branchID, scheduledDate)
+	if err = row.Scan(&holidayExists); err != nil {
+		return models.Ticket{}, err
+	}
+	if holidayExists {
+		return models.Ticket{}, store.ErrHolidayClosed
 	}
 
 	_, err = tx.Exec(ctx, `
@@ -799,14 +815,14 @@ func updateNextTicket(ctx context.Context, tx pgx.Tx, input store.CallNextInput,
 	}
 
 	if preferRegular {
-		ticket, class, err := updateNextTicketWithFilter(ctx, tx, input, calledAt, "AND priority_class = 'regular'")
+		ticket, class, err = updateNextTicketWithFilter(ctx, tx, input, calledAt, "AND priority_class = 'regular'")
 		if err == nil || !errors.Is(err, pgx.ErrNoRows) {
 			return ticket, class, err
 		}
 		return updateNextTicketWithFilter(ctx, tx, input, calledAt, "")
 	}
 
-	ticket, class, err := updateNextTicketWithFilter(ctx, tx, input, calledAt, "AND priority_class <> 'regular'")
+	ticket, class, err = updateNextTicketWithFilter(ctx, tx, input, calledAt, "AND priority_class <> 'regular'")
 	if err == nil || !errors.Is(err, pgx.ErrNoRows) {
 		return ticket, class, err
 	}

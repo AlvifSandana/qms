@@ -237,6 +237,40 @@ func TestCreateTicketServiceNotFound(t *testing.T) {
 	}
 }
 
+func TestAppointmentCheckinHolidayClosed(t *testing.T) {
+	st := fakeStore{
+		apptFn: func(ctx context.Context, requestID, tenantID, branchID, appointmentID string) (models.Ticket, error) {
+			return models.Ticket{}, store.ErrHolidayClosed
+		},
+	}
+
+	h := NewHandler(st, Options{})
+
+	payload := map[string]string{
+		"request_id":     "11111111-1111-1111-1111-111111111111",
+		"tenant_id":      "22222222-2222-2222-2222-222222222222",
+		"branch_id":      "33333333-3333-3333-3333-333333333333",
+		"appointment_id": "44444444-4444-4444-4444-444444444444",
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/appointments/checkin", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	h.Routes().ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d", resp.Code)
+	}
+
+	var errResp errorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if errResp.Error.Code != "holiday_closed" {
+		t.Fatalf("expected error code holiday_closed, got %s", errResp.Error.Code)
+	}
+}
+
 func TestCallNextSuccess(t *testing.T) {
 	createdAt := time.Date(2026, 1, 12, 8, 0, 0, 0, time.UTC)
 	calledAt := time.Date(2026, 1, 12, 8, 1, 0, 0, time.UTC)

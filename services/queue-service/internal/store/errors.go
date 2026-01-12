@@ -10,4 +10,5 @@ var (
 	ErrInvalidState    = errors.New("invalid ticket state")
 	ErrCounterMismatch = errors.New("counter mismatch")
 	ErrAccessDenied    = errors.New("access denied")
+	ErrHolidayClosed   = errors.New("holiday closed")
 )

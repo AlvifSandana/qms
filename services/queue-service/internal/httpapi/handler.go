@@ -704,6 +704,8 @@ func mapError(err error) (int, string, string) {
 		return http.StatusForbidden, "access_denied", "access denied"
 	case errors.Is(err, store.ErrBranchNotFound):
 		return http.StatusNotFound, "branch_not_found", "branch not found"
+	case errors.Is(err, store.ErrHolidayClosed):
+		return http.StatusConflict, "holiday_closed", "appointments are closed for this holiday"
 	default:
 		return http.StatusInternalServerError, "internal_error", "internal server error"
 	}
