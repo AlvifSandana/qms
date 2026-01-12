@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -54,7 +55,10 @@ func (h *Handler) Routes() http.Handler {
 }
 
 func (h *Handler) handleBranches(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) && r.Method != http.MethodGet {
+		return
+	}
+	if r.Method == http.MethodGet && !requirePermission(w, r, permissionConfigRead) {
 		return
 	}
 	switch r.Method {
@@ -79,6 +83,9 @@ func (h *Handler) handleBranches(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id and name are required")
 			return
 		}
+		if h.maybeCreateApproval(w, r, branch.TenantID, "branch.create", branch) {
+			return
+		}
 		created, err := h.store.CreateBranch(r.Context(), branch)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -92,7 +99,7 @@ func (h *Handler) handleBranches(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleBranch(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) {
 		return
 	}
 	branchID := strings.TrimPrefix(r.URL.Path, "/api/admin/branches/")
@@ -110,6 +117,9 @@ func (h *Handler) handleBranch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		branch.BranchID = branchID
+		if h.maybeCreateApproval(w, r, branch.TenantID, "branch.update", branch) {
+			return
+		}
 		updated, err := h.store.UpdateBranch(r.Context(), branch)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -123,6 +133,9 @@ func (h *Handler) handleBranch(w http.ResponseWriter, r *http.Request) {
 		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 		if !isValidUUID(tenantID) {
 			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		if h.maybeCreateApproval(w, r, tenantID, "branch.delete", map[string]string{"branch_id": branchID}) {
 			return
 		}
 		err := h.store.DeleteBranch(r.Context(), tenantID, branchID)
@@ -142,7 +155,10 @@ func (h *Handler) handleBranch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleAreas(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) && r.Method != http.MethodGet {
+		return
+	}
+	if r.Method == http.MethodGet && !requirePermission(w, r, permissionConfigRead) {
 		return
 	}
 	switch r.Method {
@@ -167,6 +183,9 @@ func (h *Handler) handleAreas(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_request", "branch_id and name are required")
 			return
 		}
+		if h.maybeCreateApproval(w, r, "", "area.create", area) {
+			return
+		}
 		created, err := h.store.CreateArea(r.Context(), area)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -180,7 +199,10 @@ func (h *Handler) handleAreas(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleServices(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) && r.Method != http.MethodGet {
+		return
+	}
+	if r.Method == http.MethodGet && !requirePermission(w, r, permissionConfigRead) {
 		return
 	}
 	switch r.Method {
@@ -208,6 +230,9 @@ func (h *Handler) handleServices(w http.ResponseWriter, r *http.Request) {
 		if svc.SLAMinutes <= 0 {
 			svc.SLAMinutes = 5
 		}
+		if h.maybeCreateApproval(w, r, "", "service.create", svc) {
+			return
+		}
 		created, err := h.store.CreateService(r.Context(), svc)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -221,7 +246,7 @@ func (h *Handler) handleServices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleService(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) {
 		return
 	}
 	serviceID := strings.TrimPrefix(r.URL.Path, "/api/admin/services/")
@@ -245,6 +270,9 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request) {
 		svc.SLAMinutes = 5
 	}
 	svc.ServiceID = serviceID
+	if h.maybeCreateApproval(w, r, "", "service.update", svc) {
+		return
+	}
 	updated, err := h.store.UpdateService(r.Context(), svc)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -255,7 +283,10 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleCounters(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) && r.Method != http.MethodGet {
+		return
+	}
+	if r.Method == http.MethodGet && !requirePermission(w, r, permissionConfigRead) {
 		return
 	}
 	switch r.Method {
@@ -283,6 +314,9 @@ func (h *Handler) handleCounters(w http.ResponseWriter, r *http.Request) {
 		if counter.Status == "" {
 			counter.Status = "active"
 		}
+		if h.maybeCreateApproval(w, r, "", "counter.create", counter) {
+			return
+		}
 		created, err := h.store.CreateCounter(r.Context(), counter)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -296,7 +330,7 @@ func (h *Handler) handleCounters(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleCounterServices(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/admin/counters/")
@@ -324,6 +358,9 @@ func (h *Handler) handleCounterServices(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_request", "service_id must be a UUID")
 		return
 	}
+	if h.maybeCreateApproval(w, r, "", "counter.map_service", map[string]string{"counter_id": counterID, "service_id": payload.ServiceID}) {
+		return
+	}
 	if err := h.store.MapCounterService(r.Context(), counterID, payload.ServiceID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
@@ -333,7 +370,10 @@ func (h *Handler) handleCounterServices(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) handleServicePolicy(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) && r.Method != http.MethodGet {
+		return
+	}
+	if r.Method == http.MethodGet && !requirePermission(w, r, permissionConfigRead) {
 		return
 	}
 	switch r.Method {
@@ -367,6 +407,9 @@ func (h *Handler) handleServicePolicy(w http.ResponseWriter, r *http.Request) {
 		if policy.NoShowGraceSeconds <= 0 {
 			policy.NoShowGraceSeconds = 300
 		}
+		if h.maybeCreateApproval(w, r, policy.TenantID, "policy.update", policy) {
+			return
+		}
 		updated, err := h.store.UpsertServicePolicy(r.Context(), policy)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -380,7 +423,10 @@ func (h *Handler) handleServicePolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleDevices(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) && r.Method != http.MethodGet {
+		return
+	}
+	if r.Method == http.MethodGet && !requirePermission(w, r, permissionConfigRead) {
 		return
 	}
 	switch r.Method {
@@ -408,6 +454,9 @@ func (h *Handler) handleDevices(w http.ResponseWriter, r *http.Request) {
 		if device.Status == "" {
 			device.Status = "offline"
 		}
+		if h.maybeCreateApproval(w, r, device.TenantID, "device.register", device) {
+			return
+		}
 		created, err := h.store.RegisterDevice(r.Context(), device)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -421,7 +470,7 @@ func (h *Handler) handleDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/admin/devices/")
@@ -458,7 +507,7 @@ func (h *Handler) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleDeviceConfigs(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) {
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -475,6 +524,9 @@ func (h *Handler) handleDeviceConfigs(w http.ResponseWriter, r *http.Request) {
 	}
 	if !isValidUUID(payload.DeviceID) || payload.Version <= 0 || len(payload.Payload) == 0 {
 		writeError(w, http.StatusBadRequest, "invalid_request", "device_id, version, payload are required")
+		return
+	}
+	if h.maybeCreateApproval(w, r, "", "device.config", payload) {
 		return
 	}
 	if err := h.store.CreateDeviceConfig(r.Context(), payload.DeviceID, payload.Version, string(payload.Payload)); err != nil {
@@ -535,7 +587,7 @@ func (h *Handler) handleDeviceStatusUpdate(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) handleAudit(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionAuditRead) {
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -558,7 +610,7 @@ func (h *Handler) handleAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleRoles(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionRolesManage) {
 		return
 	}
 	switch r.Method {
@@ -596,7 +648,7 @@ func (h *Handler) handleRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleUserRole(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionRolesManage) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
@@ -634,7 +686,10 @@ func (h *Handler) handleUserRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleHolidays(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionConfigWrite) && r.Method != http.MethodGet {
+		return
+	}
+	if r.Method == http.MethodGet && !requirePermission(w, r, permissionConfigRead) {
 		return
 	}
 	switch r.Method {
@@ -660,6 +715,9 @@ func (h *Handler) handleHolidays(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id, branch_id, date, name are required")
 			return
 		}
+		if h.maybeCreateApproval(w, r, holiday.TenantID, "holiday.create", holiday) {
+			return
+		}
 		created, err := h.store.CreateHoliday(r.Context(), holiday)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -673,7 +731,7 @@ func (h *Handler) handleHolidays(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleApprovals(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionApprovalManage) {
 		return
 	}
 	switch r.Method {
@@ -712,7 +770,7 @@ func (h *Handler) handleApprovals(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, permissionApprovalManage) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/admin/approvals/")
@@ -732,7 +790,19 @@ func (h *Handler) handleApprovalAction(w http.ResponseWriter, r *http.Request) {
 	}
 	approverID := strings.TrimSpace(r.Header.Get("X-User-ID"))
 	if err := h.store.ApproveRequest(r.Context(), approvalID, approverID); err != nil {
+		if errors.Is(err, store.ErrApprovalNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "approval request not found")
+			return
+		}
+		if errors.Is(err, store.ErrApprovalNotPending) {
+			writeError(w, http.StatusConflict, "already_processed", "approval request is not pending")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		return
+	}
+	if err := h.applyApproval(r.Context(), approvalID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "apply approval failed")
 		return
 	}
 	h.recordAudit(r, "", "approval.approve", "approval", approvalID)
@@ -767,13 +837,171 @@ func isValidUUID(value string) bool {
 	return err == nil
 }
 
-func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+type permission string
+
+const (
+	permissionConfigRead   permission = "config.read"
+	permissionConfigWrite  permission = "config.write"
+	permissionAuditRead    permission = "audit.read"
+	permissionRolesManage  permission = "roles.manage"
+	permissionApprovalManage permission = "approval.manage"
+)
+
+func requirePermission(w http.ResponseWriter, r *http.Request, perm permission) bool {
 	role := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Role")))
-	if role == "agent" {
-		writeError(w, http.StatusForbidden, "access_denied", "insufficient role")
+	if role == "" {
+		role = "agent"
+	}
+	if hasPermission(role, perm) {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "access_denied", "insufficient role")
+	return false
+}
+
+func hasPermission(role string, perm permission) bool {
+	switch role {
+	case "admin":
+		return true
+	case "supervisor":
+		switch perm {
+		case permissionConfigRead, permissionConfigWrite, permissionAuditRead, permissionApprovalManage:
+			return true
+		default:
+			return false
+		}
+	case "agent":
+		return false
+	default:
 		return false
 	}
+}
+
+func (h *Handler) maybeCreateApproval(w http.ResponseWriter, r *http.Request, tenantID, reqType string, payload interface{}) bool {
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(r.Header.Get("X-Tenant-ID"))
+	}
+	if !isValidUUID(tenantID) {
+		return false
+	}
+	enabled, err := h.store.ApprovalsEnabled(r.Context(), tenantID)
+	if err != nil || !enabled {
+		return false
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "approval marshal failed")
+		return true
+	}
+	approval := models.ApprovalRequest{
+		TenantID:    tenantID,
+		RequestType: reqType,
+		Payload:     string(raw),
+		CreatedBy:   strings.TrimSpace(r.Header.Get("X-User-ID")),
+	}
+	created, err := h.store.CreateApproval(r.Context(), approval)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "approval create failed")
+		return true
+	}
+	writeJSON(w, http.StatusAccepted, created)
 	return true
+}
+
+func (h *Handler) applyApproval(ctx context.Context, approvalID string) error {
+	approval, found, err := h.store.GetApproval(ctx, approvalID)
+	if err != nil || !found {
+		return err
+	}
+	switch approval.RequestType {
+	case "branch.create":
+		var branch models.Branch
+		if err := json.Unmarshal([]byte(approval.Payload), &branch); err != nil {
+			return err
+		}
+		_, err = h.store.CreateBranch(ctx, branch)
+		return err
+	case "branch.update":
+		var branch models.Branch
+		if err := json.Unmarshal([]byte(approval.Payload), &branch); err != nil {
+			return err
+		}
+		_, err = h.store.UpdateBranch(ctx, branch)
+		return err
+	case "branch.delete":
+		var payload map[string]string
+		if err := json.Unmarshal([]byte(approval.Payload), &payload); err != nil {
+			return err
+		}
+		return h.store.DeleteBranch(ctx, approval.TenantID, payload["branch_id"])
+	case "area.create":
+		var area models.Area
+		if err := json.Unmarshal([]byte(approval.Payload), &area); err != nil {
+			return err
+		}
+		_, err = h.store.CreateArea(ctx, area)
+		return err
+	case "service.create":
+		var svc models.Service
+		if err := json.Unmarshal([]byte(approval.Payload), &svc); err != nil {
+			return err
+		}
+		_, err = h.store.CreateService(ctx, svc)
+		return err
+	case "service.update":
+		var svc models.Service
+		if err := json.Unmarshal([]byte(approval.Payload), &svc); err != nil {
+			return err
+		}
+		_, err = h.store.UpdateService(ctx, svc)
+		return err
+	case "counter.create":
+		var counter models.Counter
+		if err := json.Unmarshal([]byte(approval.Payload), &counter); err != nil {
+			return err
+		}
+		_, err = h.store.CreateCounter(ctx, counter)
+		return err
+	case "counter.map_service":
+		var payload map[string]string
+		if err := json.Unmarshal([]byte(approval.Payload), &payload); err != nil {
+			return err
+		}
+		return h.store.MapCounterService(ctx, payload["counter_id"], payload["service_id"])
+	case "policy.update":
+		var policy models.ServicePolicy
+		if err := json.Unmarshal([]byte(approval.Payload), &policy); err != nil {
+			return err
+		}
+		_, err = h.store.UpsertServicePolicy(ctx, policy)
+		return err
+	case "device.register":
+		var device models.Device
+		if err := json.Unmarshal([]byte(approval.Payload), &device); err != nil {
+			return err
+		}
+		_, err = h.store.RegisterDevice(ctx, device)
+		return err
+	case "device.config":
+		var payload struct {
+			DeviceID string          `json:"device_id"`
+			Version  int             `json:"version"`
+			Payload  json.RawMessage `json:"payload"`
+		}
+		if err := json.Unmarshal([]byte(approval.Payload), &payload); err != nil {
+			return err
+		}
+		return h.store.CreateDeviceConfig(ctx, payload.DeviceID, payload.Version, string(payload.Payload))
+	case "holiday.create":
+		var holiday models.Holiday
+		if err := json.Unmarshal([]byte(approval.Payload), &holiday); err != nil {
+			return err
+		}
+		_, err = h.store.CreateHoliday(ctx, holiday)
+		return err
+	default:
+		return nil
+	}
 }
 
 func (h *Handler) recordAudit(r *http.Request, tenantID, actionType, targetType, targetID string) {

@@ -495,12 +495,30 @@ func (s *Store) CreateApproval(ctx context.Context, approval models.ApprovalRequ
 }
 
 func (s *Store) ApproveRequest(ctx context.Context, approvalID, approverID string) error {
-	_, err := s.pool.Exec(ctx, `
+	tag, err := s.pool.Exec(ctx, `
 		UPDATE approval_requests
 		SET status = 'approved', approved_by = $2, approved_at = NOW()
-		WHERE approval_id = $1
+		WHERE approval_id = $1 AND status = 'pending'
 	`, approvalID, nullIfEmpty(approverID))
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+	var exists bool
+	row := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM approval_requests WHERE approval_id = $1
+		)
+	`, approvalID)
+	if err := row.Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return store.ErrApprovalNotFound
+	}
+	return store.ErrApprovalNotPending
 }
 
 func (s *Store) ListApprovals(ctx context.Context, tenantID, status string) ([]models.ApprovalRequest, error) {
@@ -534,6 +552,38 @@ func (s *Store) ListApprovals(ctx context.Context, tenantID, status string) ([]m
 		return nil, err
 	}
 	return approvals, nil
+}
+
+func (s *Store) GetApproval(ctx context.Context, approvalID string) (models.ApprovalRequest, bool, error) {
+	var a models.ApprovalRequest
+	row := s.pool.QueryRow(ctx, `
+		SELECT approval_id, tenant_id, request_type, payload, status, created_by, approved_by
+		FROM approval_requests
+		WHERE approval_id = $1
+	`, approvalID)
+	if err := row.Scan(&a.ApprovalID, &a.TenantID, &a.RequestType, &a.Payload, &a.Status, &a.CreatedBy, &a.ApprovedBy); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.ApprovalRequest{}, false, nil
+		}
+		return models.ApprovalRequest{}, false, err
+	}
+	return a, true, nil
+}
+
+func (s *Store) ApprovalsEnabled(ctx context.Context, tenantID string) (bool, error) {
+	var enabled bool
+	row := s.pool.QueryRow(ctx, `
+		SELECT approvals_enabled
+		FROM tenant_approval_prefs
+		WHERE tenant_id = $1
+	`, tenantID)
+	if err := row.Scan(&enabled); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return enabled, nil
 }
 
 func nullIfEmpty(value string) interface{} {
