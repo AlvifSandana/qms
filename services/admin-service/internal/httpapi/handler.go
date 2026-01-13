@@ -50,6 +50,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/admin/users/", h.handleUserRole)
 	mux.HandleFunc("/api/admin/holidays", h.handleHolidays)
 	mux.HandleFunc("/api/admin/approvals", h.handleApprovals)
+	mux.HandleFunc("/api/admin/approvals/prefs", h.handleApprovalPrefs)
 	mux.HandleFunc("/api/admin/approvals/", h.handleApprovalAction)
 	return mux
 }
@@ -653,13 +654,35 @@ func (h *Handler) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 2 || parts[1] != "role" {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
 	userID := parts[0]
 	if !isValidUUID(userID) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "user_id must be a UUID")
+		return
+	}
+	if len(parts) == 1 {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+		if !isValidUUID(tenantID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		user, found, err := h.store.GetUser(r.Context(), tenantID, userID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, user)
+		return
+	}
+	if len(parts) != 2 || parts[1] != "role" {
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -764,6 +787,55 @@ func (h *Handler) handleApprovals(w http.ResponseWriter, r *http.Request) {
 		}
 		h.recordAudit(r, approval.TenantID, "approval.request", "approval", created.ApprovalID)
 		writeJSON(w, http.StatusOK, created)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleApprovalPrefs(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if !requirePermission(w, r, permissionConfigRead) {
+			return
+		}
+		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+		if !isValidUUID(tenantID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		enabled, err := h.store.GetApprovalPrefs(r.Context(), tenantID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"tenant_id": tenantID,
+			"approvals_enabled": enabled,
+		})
+	case http.MethodPost:
+		if !requirePermission(w, r, permissionConfigWrite) {
+			return
+		}
+		var payload struct {
+			TenantID         string `json:"tenant_id"`
+			ApprovalsEnabled bool   `json:"approvals_enabled"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if !isValidUUID(payload.TenantID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		if err := h.store.SetApprovalPrefs(r.Context(), payload.TenantID, payload.ApprovalsEnabled); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, payload.TenantID, "approval.prefs_update", "tenant", payload.TenantID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"tenant_id": payload.TenantID,
+			"approvals_enabled": payload.ApprovalsEnabled,
+		})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}

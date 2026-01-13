@@ -239,6 +239,11 @@
           <button id="assignRole">Assign Role</button>
         </div>
         <div class="list" id="roleList"></div>
+        <div class="grid">
+          <button id="loadUser">Load User Detail</button>
+          <button id="clearUser" class="ghost">Clear</button>
+        </div>
+        <pre class="mono" id="userDetail">No user loaded.</pre>
       </div>
     </section>
 
@@ -261,6 +266,17 @@
       <div>
         <h2>Approval Detail</h2>
         <pre class="mono" id="approvalDetail">Select an approval to see payload.</pre>
+        <div class="grid">
+          <label>
+            Approvals Enabled
+            <select id="approvalPref">
+              <option value="false">false</option>
+              <option value="true">true</option>
+            </select>
+          </label>
+          <button id="saveApprovalPref">Save Preference</button>
+        </div>
+        <p class="hint" id="approvalPrefHint"></p>
       </div>
     </section>
 

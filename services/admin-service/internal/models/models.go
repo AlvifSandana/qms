@@ -65,6 +65,16 @@ type Role struct {
 	Name     string `json:"name"`
 }
 
+type UserDetail struct {
+	UserID    string `json:"user_id"`
+	TenantID  string `json:"tenant_id"`
+	Email     string `json:"email"`
+	RoleID    string `json:"role_id"`
+	RoleName  string `json:"role_name"`
+	Active    bool   `json:"active"`
+	CreatedAt string `json:"created_at"`
+}
+
 type Holiday struct {
 	HolidayID string `json:"holiday_id"`
 	TenantID  string `json:"tenant_id"`

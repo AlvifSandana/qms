@@ -38,6 +38,8 @@ const holidayList = document.getElementById("holidayList");
 const approvalStatus = document.getElementById("approvalStatus");
 const approvalList = document.getElementById("approvalList");
 const approvalDetail = document.getElementById("approvalDetail");
+const approvalPref = document.getElementById("approvalPref");
+const approvalPrefHint = document.getElementById("approvalPrefHint");
 const auditAction = document.getElementById("auditAction");
 const auditUser = document.getElementById("auditUser");
 const auditList = document.getElementById("auditList");
@@ -52,6 +54,7 @@ const roleName = document.getElementById("roleName");
 const roleList = document.getElementById("roleList");
 const roleAssign = document.getElementById("roleAssign");
 const targetUserId = document.getElementById("targetUserId");
+const userDetail = document.getElementById("userDetail");
 
 document.getElementById("refreshAll").addEventListener("click", refreshAll);
 document.getElementById("createBranch").addEventListener("click", onCreateBranch);
@@ -67,6 +70,9 @@ document.getElementById("pushConfig").addEventListener("click", onPushConfig);
 document.getElementById("updateStatus").addEventListener("click", onUpdateStatus);
 document.getElementById("createRole").addEventListener("click", onCreateRole);
 document.getElementById("assignRole").addEventListener("click", onAssignRole);
+document.getElementById("saveApprovalPref").addEventListener("click", onSaveApprovalPref);
+document.getElementById("loadUser").addEventListener("click", loadUserDetail);
+document.getElementById("clearUser").addEventListener("click", clearUserDetail);
 
 function headers() {
   return {
@@ -158,6 +164,7 @@ async function refreshAll() {
       loadHolidays(),
       loadRoles(),
       loadApprovals(),
+      loadApprovalPref(),
       loadAudit(),
     ]);
     setStatus("Ready");
@@ -472,6 +479,50 @@ function showApprovalDetail(approval) {
   }
 }
 
+async function loadApprovalPref() {
+  approvalPrefHint.textContent = "";
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId) {
+    approvalPrefHint.textContent = "Tenant ID required.";
+    return;
+  }
+  const data = await api(`/api/admin/approvals/prefs?tenant_id=${tenantId}`);
+  approvalPref.value = data.approvals_enabled ? "true" : "false";
+}
+
+async function onSaveApprovalPref() {
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId) {
+    approvalPrefHint.textContent = "Tenant ID required.";
+    return;
+  }
+  const payload = {
+    tenant_id: tenantId,
+    approvals_enabled: approvalPref.value === "true",
+  };
+  const data = await api("/api/admin/approvals/prefs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  approvalPref.value = data.approvals_enabled ? "true" : "false";
+  approvalPrefHint.textContent = "Preferences saved.";
+}
+
+function clearUserDetail() {
+  userDetail.textContent = "No user loaded.";
+}
+
+async function loadUserDetail() {
+  const tenantId = tenantIdInput.value.trim();
+  const userId = targetUserId.value.trim();
+  if (!tenantId || !userId) {
+    userDetail.textContent = "Tenant ID and user ID required.";
+    return;
+  }
+  const data = await api(`/api/admin/users/${userId}?tenant_id=${tenantId}`);
+  userDetail.textContent = JSON.stringify(data, null, 2);
+}
+
 async function onPushConfig() {
   if (!configDeviceId.value.trim()) {
     setHint("Device ID required.");
@@ -560,6 +611,7 @@ async function onAssignRole() {
     body: JSON.stringify({ tenant_id: tenantId, role_id: roleAssign.value }),
   });
   setHint("Role assigned.");
+  loadUserDetail().catch(() => {});
 }
 
 refreshAll().catch((err) => setHint(err.message));

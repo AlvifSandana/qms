@@ -439,6 +439,23 @@ func (s *Store) UpdateUserRole(ctx context.Context, tenantID, userID, roleID str
 	return err
 }
 
+func (s *Store) GetUser(ctx context.Context, tenantID, userID string) (models.UserDetail, bool, error) {
+	var user models.UserDetail
+	row := s.pool.QueryRow(ctx, `
+		SELECT u.user_id, u.tenant_id, u.email, u.role_id, r.name, u.active, u.created_at
+		FROM users u
+		JOIN roles r ON r.role_id = u.role_id
+		WHERE u.tenant_id = $1 AND u.user_id = $2
+	`, tenantID, userID)
+	if err := row.Scan(&user.UserID, &user.TenantID, &user.Email, &user.RoleID, &user.RoleName, &user.Active, &user.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.UserDetail{}, false, nil
+		}
+		return models.UserDetail{}, false, err
+	}
+	return user, true, nil
+}
+
 func (s *Store) CreateHoliday(ctx context.Context, holiday models.Holiday) (models.Holiday, error) {
 	if holiday.HolidayID == "" {
 		holiday.HolidayID = uuid.NewString()
@@ -584,6 +601,19 @@ func (s *Store) ApprovalsEnabled(ctx context.Context, tenantID string) (bool, er
 		return false, err
 	}
 	return enabled, nil
+}
+
+func (s *Store) GetApprovalPrefs(ctx context.Context, tenantID string) (bool, error) {
+	return s.ApprovalsEnabled(ctx, tenantID)
+}
+
+func (s *Store) SetApprovalPrefs(ctx context.Context, tenantID string, enabled bool) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO tenant_approval_prefs (tenant_id, approvals_enabled)
+		VALUES ($1, $2)
+		ON CONFLICT (tenant_id) DO UPDATE SET approvals_enabled = EXCLUDED.approvals_enabled
+	`, tenantID, enabled)
+	return err
 }
 
 func nullIfEmpty(value string) interface{} {

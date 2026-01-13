@@ -38,6 +38,7 @@ type Store interface {
 	CreateRole(ctx context.Context, role models.Role) (models.Role, error)
 	ListRoles(ctx context.Context, tenantID string) ([]models.Role, error)
 	UpdateUserRole(ctx context.Context, tenantID, userID, roleID string) error
+	GetUser(ctx context.Context, tenantID, userID string) (models.UserDetail, bool, error)
 
 	CreateHoliday(ctx context.Context, holiday models.Holiday) (models.Holiday, error)
 	ListHolidays(ctx context.Context, tenantID, branchID string) ([]models.Holiday, error)
@@ -47,4 +48,6 @@ type Store interface {
 	ListApprovals(ctx context.Context, tenantID, status string) ([]models.ApprovalRequest, error)
 	GetApproval(ctx context.Context, approvalID string) (models.ApprovalRequest, bool, error)
 	ApprovalsEnabled(ctx context.Context, tenantID string) (bool, error)
+	GetApprovalPrefs(ctx context.Context, tenantID string) (bool, error)
+	SetApprovalPrefs(ctx context.Context, tenantID string, enabled bool) error
 }
