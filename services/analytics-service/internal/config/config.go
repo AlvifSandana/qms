@@ -10,6 +10,10 @@ type Config struct {
 	DatabaseURL string
 	AnomalyThresholdSeconds float64
 	AnomalyIntervalSeconds  int
+	RateLimitPerMinute int
+	RateLimitBurst int
+	TenantRateLimitPerMinute int
+	TenantRateLimitBurst int
 }
 
 func Load() Config {
@@ -23,6 +27,10 @@ func Load() Config {
 		DatabaseURL: os.Getenv("DB_DSN"),
 		AnomalyThresholdSeconds: readFloat("ANOMALY_WAIT_THRESHOLD_SECONDS", 1800),
 		AnomalyIntervalSeconds: readInt("ANOMALY_INTERVAL_SECONDS", 300),
+		RateLimitPerMinute: readInt("ANALYTICS_RATE_LIMIT_PER_MIN", 120),
+		RateLimitBurst: readInt("ANALYTICS_RATE_LIMIT_BURST", 30),
+		TenantRateLimitPerMinute: readInt("ANALYTICS_TENANT_RATE_LIMIT_PER_MIN", 300),
+		TenantRateLimitBurst: readInt("ANALYTICS_TENANT_RATE_LIMIT_BURST", 60),
 	}
 }
 

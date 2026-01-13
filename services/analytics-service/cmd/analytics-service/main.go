@@ -11,6 +11,7 @@ import (
 
 	"qms/analytics-service/internal/config"
 	"qms/analytics-service/internal/httpapi"
+	"qms/analytics-service/internal/store"
 	"qms/analytics-service/internal/store/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,12 +26,18 @@ func main() {
 	}
 	defer pool.Close()
 
-	store := postgres.NewStore(pool)
-	handler := httpapi.NewHandler(store)
+	repo := postgres.NewStore(pool)
+	handler := httpapi.NewHandler(repo)
+	limiter := httpapi.NewRateLimiter(httpapi.RateLimitConfig{
+		IPPerMinute:     cfg.RateLimitPerMinute,
+		IPBurst:         cfg.RateLimitBurst,
+		TenantPerMinute: cfg.TenantRateLimitPerMinute,
+		TenantBurst:     cfg.TenantRateLimitBurst,
+	})
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      handler.Routes(),
+		Handler:      limiter.Middleware(handler.Routes()),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -50,7 +57,7 @@ func main() {
 		ticker := time.NewTicker(time.Duration(cfg.AnomalyIntervalSeconds) * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			services, err := store.ListServices(context.Background())
+			services, err := repo.ListServices(context.Background())
 			if err != nil {
 				log.Printf("anomaly list services error: %v", err)
 				continue
@@ -58,12 +65,12 @@ func main() {
 			windowEnd := time.Now().UTC()
 			windowStart := windowEnd.Add(-1 * time.Hour)
 			for _, svc := range services {
-				kpi, err := store.GetKPIs(context.Background(), svc.TenantID, svc.BranchID, svc.ServiceID, windowStart, windowEnd)
+				kpi, err := repo.GetKPIs(context.Background(), svc.TenantID, svc.BranchID, svc.ServiceID, windowStart, windowEnd)
 				if err != nil {
 					continue
 				}
 				if kpi.AvgWaitSeconds > cfg.AnomalyThresholdSeconds {
-					_ = store.InsertAnomaly(context.Background(), store.Anomaly{
+					_ = repo.InsertAnomaly(context.Background(), store.Anomaly{
 						TenantID: svc.TenantID,
 						BranchID: svc.BranchID,
 						ServiceID: svc.ServiceID,

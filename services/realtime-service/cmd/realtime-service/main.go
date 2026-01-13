@@ -14,6 +14,7 @@ import (
 
 	"qms/realtime-service/internal/config"
 	"qms/realtime-service/internal/hub"
+	"qms/realtime-service/internal/httpapi"
 	"qms/realtime-service/internal/store/postgres"
 
 	"github.com/google/uuid"
@@ -38,10 +39,13 @@ func main() {
 
 	store := postgres.NewStore(pool)
 	h := hub.New()
+	limiter := httpapi.NewRateLimiter(httpapi.RateLimitConfig{
+		IPPerMinute: cfg.RateLimitPerMinute,
+		IPBurst:     cfg.RateLimitBurst,
+	})
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/realtime/info", sockjs.InfoHandler)
-	mux.Handle("/realtime/", sockjs.NewHandler("/realtime", sockjs.DefaultOptions, func(session sockjs.Session) {
+	sockjsHandler := sockjs.NewHandler("/realtime", sockjs.DefaultOptions, func(session sockjs.Session) {
 		client := &hub.Client{ID: uuid.NewString(), Send: make(chan []byte, 16)}
 		h.Register(client)
 		defer h.Unregister(client)
@@ -67,11 +71,12 @@ func main() {
 				continue
 			}
 		}
-	}))
+	})
+	mux.Handle("/realtime/", sockjsHandler)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      mux,
+		Handler:      limiter.Middleware(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

@@ -11,6 +11,8 @@ type Config struct {
 	DatabaseURL string
 	PollInterval time.Duration
 	BatchSize   int
+	RateLimitPerMinute int
+	RateLimitBurst int
 }
 
 func Load() Config {
@@ -24,6 +26,8 @@ func Load() Config {
 		DatabaseURL: os.Getenv("DB_DSN"),
 		PollInterval: readDurationSeconds("REALTIME_POLL_SECONDS", 1),
 		BatchSize:   readInt("REALTIME_BATCH_SIZE", 100),
+		RateLimitPerMinute: readInt("REALTIME_RATE_LIMIT_PER_MIN", 120),
+		RateLimitBurst: readInt("REALTIME_RATE_LIMIT_BURST", 30),
 	}
 }
 
