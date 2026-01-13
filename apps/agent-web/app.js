@@ -51,6 +51,10 @@ function setAlert(message) {
   }
   alertBox.textContent = message;
   alertBox.hidden = false;
+  clearTimeout(setAlert.timer);
+  setAlert.timer = setTimeout(() => {
+    alertBox.hidden = true;
+  }, 5000);
 }
 
 function updateSelect(select, items, placeholder) {
@@ -127,7 +131,7 @@ async function login() {
   if (!response.ok) {
     loginHint.textContent = "Login failed.";
     setStatus("Login failed");
-    setAlert("Login failed. Check credentials and tenant ID.");
+    setAlert("Login failed. Check credentials, tenant ID, and branch access.");
     return;
   }
 
@@ -327,7 +331,7 @@ async function loadActiveTicket() {
   }
   if (!response.ok) {
     setStatus("Failed to load active ticket");
-    setAlert("Failed to load active ticket.");
+    setAlert("Failed to load active ticket. Try refresh.");
     return;
   }
   const ticket = await response.json();
@@ -362,7 +366,7 @@ async function performAction(action) {
   });
   if (!response.ok) {
     setStatus(`Action failed: ${action}`);
-    setAlert(`Action failed: ${action}`);
+    setAlert(`Action failed: ${action}. Please retry.`);
     return;
   }
   setStatus(`Action ok: ${action}`);
@@ -397,7 +401,7 @@ async function transferTicket() {
 
   if (!response.ok) {
     setStatus("Transfer failed");
-    setAlert("Transfer failed.");
+    setAlert("Transfer failed. Check mapping or permissions.");
     return;
   }
   setStatus("Transfer ok");
@@ -437,7 +441,7 @@ async function callNext() {
 
   if (!response.ok) {
     setStatus("Call next failed");
-    setAlert("Call next failed.");
+    setAlert("Call next failed. Check service mapping.");
     return;
   }
 

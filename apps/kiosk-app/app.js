@@ -150,6 +150,7 @@ async function loadServices() {
   const services = await response.json();
   updateServiceSelect(services);
   setStatus(t("loadOk"));
+  setConnState("Online");
 }
 
 function renderTicket(ticket) {

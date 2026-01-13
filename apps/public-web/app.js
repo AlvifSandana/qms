@@ -74,7 +74,7 @@ async function loadServices() {
   }
   const response = await fetch(`${state.queueBase}/api/services?tenant_id=${state.tenantId}&branch_id=${state.branchId}`);
   if (!response.ok) {
-    setHint("Failed to load services.");
+    setHint("Failed to load services. Check tenant and branch.");
     return;
   }
   const services = await response.json();
@@ -283,6 +283,7 @@ async function joinQueue() {
   });
   if (!response.ok) {
     setStatus("Request failed");
+    setHint("Unable to create ticket. Try again.");
     return;
   }
   const ticket = await response.json();
