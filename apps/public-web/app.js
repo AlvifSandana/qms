@@ -1,4 +1,5 @@
 const queueBaseInput = document.getElementById("queueBase");
+const realtimeBaseInput = document.getElementById("realtimeBase");
 const tenantIdInput = document.getElementById("tenantId");
 const branchIdInput = document.getElementById("branchId");
 const serviceSelect = document.getElementById("serviceSelect");
@@ -9,11 +10,13 @@ const ticketCard = document.getElementById("ticketCard");
 const statusEl = document.getElementById("status");
 const setupHint = document.getElementById("setupHint");
 const trackTicketId = document.getElementById("trackTicketId");
+const trackServiceId = document.getElementById("trackServiceId");
 const trackBtn = document.getElementById("trackBtn");
 const timeline = document.getElementById("timeline");
 
 const state = {
   queueBase: "http://localhost:8080",
+  realtimeBase: "http://localhost:8085",
   tenantId: "",
   branchId: "",
   serviceId: "",
@@ -21,7 +24,10 @@ const state = {
   ticketNumber: "",
   lastAfter: "",
   events: [],
+  seenEvents: new Set(),
   poller: null,
+  socket: null,
+  positionTimer: null,
 };
 
 function setStatus(text) {
@@ -59,6 +65,7 @@ function uuidv4() {
 
 async function loadServices() {
   state.queueBase = queueBaseInput.value.trim();
+  state.realtimeBase = realtimeBaseInput.value.trim();
   state.tenantId = tenantIdInput.value.trim();
   state.branchId = branchIdInput.value.trim();
   if (!state.queueBase || !state.tenantId || !state.branchId) {
@@ -83,7 +90,29 @@ function renderTicket() {
   ticketCard.innerHTML = `
     <h3>${state.ticketNumber}</h3>
     <p>Ticket ID: ${state.ticketId}</p>
+    <p id="positionInfo">Position: checking...</p>
   `;
+}
+
+async function updatePosition() {
+  if (!state.serviceId || !state.branchId || !state.tenantId) {
+    return;
+  }
+  const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${state.serviceId}`);
+  if (!response.ok) {
+    return;
+  }
+  const tickets = await response.json();
+  const index = tickets.findIndex((ticket) => ticket.ticket_id === state.ticketId);
+  const positionInfo = document.getElementById("positionInfo");
+  if (!positionInfo) {
+    return;
+  }
+  if (index === -1) {
+    positionInfo.textContent = "Position: called or completed";
+    return;
+  }
+  positionInfo.textContent = `Position: ${index + 1} in queue`;
 }
 
 function renderTimeline(events) {
@@ -134,9 +163,15 @@ async function pollEvents() {
   const updates = [];
   for (const event of events) {
     state.lastAfter = event.created_at || state.lastAfter;
+    if (state.seenEvents.has(event.event_id)) {
+      continue;
+    }
     const payload = normalizePayload(event.payload);
     if (payload.ticket_id !== state.ticketId) {
       continue;
+    }
+    if (event.event_id) {
+      state.seenEvents.add(event.event_id);
     }
     updates.push({
       label: event.type,
@@ -151,6 +186,62 @@ async function pollEvents() {
   setStatus("Tracking");
 }
 
+function connectRealtime() {
+  if (!state.realtimeBase || !state.tenantId) {
+    return;
+  }
+  if (state.socket) {
+    state.socket.close();
+    state.socket = null;
+  }
+  const endpoint = `${state.realtimeBase}/realtime`;
+  const socket = new SockJS(endpoint);
+  state.socket = socket;
+  socket.onopen = () => {
+    const msg = {
+      action: "subscribe",
+      tenant_id: state.tenantId,
+      branch_id: state.branchId,
+      service_id: state.serviceId,
+    };
+    socket.send(JSON.stringify(msg));
+  };
+  socket.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(event.data);
+      handleRealtimeEvent(parsed);
+    } catch (err) {
+      return;
+    }
+  };
+  socket.onclose = () => {
+    state.socket = null;
+  };
+}
+
+function handleRealtimeEvent(event) {
+  if (!event || !event.type) {
+    return;
+  }
+  const payload = normalizePayload(event.payload);
+  if (payload.ticket_id !== state.ticketId) {
+    return;
+  }
+  if (event.event_id && state.seenEvents.has(event.event_id)) {
+    return;
+  }
+  if (event.event_id) {
+    state.seenEvents.add(event.event_id);
+  }
+  state.events = [{
+    label: event.type,
+    detail: payload.counter_id ? `Counter ${payload.counter_id}` : payload.status || "",
+    time: new Date(event.created_at || Date.now()).toLocaleTimeString(),
+  }, ...state.events].slice(0, 20);
+  renderTimeline(state.events);
+  setStatus("Tracking");
+}
+
 function startPolling() {
   if (state.poller) {
     clearInterval(state.poller);
@@ -158,10 +249,17 @@ function startPolling() {
   state.poller = setInterval(() => {
     pollEvents().catch(() => setStatus("Offline"));
   }, 5000);
+  if (state.positionTimer) {
+    clearInterval(state.positionTimer);
+  }
+  state.positionTimer = setInterval(() => {
+    updatePosition().catch(() => {});
+  }, 15000);
 }
 
 async function joinQueue() {
   state.queueBase = queueBaseInput.value.trim();
+  state.realtimeBase = realtimeBaseInput.value.trim();
   state.tenantId = tenantIdInput.value.trim();
   state.branchId = branchIdInput.value.trim();
   state.serviceId = serviceSelect.value;
@@ -194,14 +292,20 @@ async function joinQueue() {
   trackTicketId.value = ticket.ticket_id;
   setStatus(`Ticket ${ticket.ticket_number}`);
   state.lastAfter = "";
+  state.seenEvents.clear();
   state.events = [];
   renderTimeline(state.events);
+  connectRealtime();
   startPolling();
+  updatePosition().catch(() => {});
 }
 
 function trackTicket() {
   state.queueBase = queueBaseInput.value.trim();
+  state.realtimeBase = realtimeBaseInput.value.trim();
   state.tenantId = tenantIdInput.value.trim();
+  state.branchId = branchIdInput.value.trim();
+  state.serviceId = trackServiceId.value.trim();
   const id = trackTicketId.value.trim();
   if (!id || !state.queueBase || !state.tenantId) {
     setHint("Queue base, tenant ID, and ticket ID required.");
@@ -209,9 +313,12 @@ function trackTicket() {
   }
   state.ticketId = id;
   state.lastAfter = "";
+  state.seenEvents.clear();
   state.events = [];
   renderTimeline(state.events);
+  connectRealtime();
   startPolling();
+  updatePosition().catch(() => {});
 }
 
 loadServicesBtn.addEventListener("click", () => {

@@ -33,12 +33,24 @@ const noShowBtn = document.getElementById("noShowBtn");
 const cancelBtn = document.getElementById("cancelBtn");
 const transferBtn = document.getElementById("transferBtn");
 const transferSelect = document.getElementById("transferService");
+const alertBox = document.getElementById("alert");
+const logoutBtn = document.getElementById("logoutBtn");
 let socket = null;
 let reconnectDelay = 1000;
 let reconnectTimer = null;
 
 function setStatus(text) {
   status.textContent = text;
+}
+
+function setAlert(message) {
+  if (!message) {
+    alertBox.hidden = true;
+    alertBox.textContent = "";
+    return;
+  }
+  alertBox.textContent = message;
+  alertBox.hidden = false;
 }
 
 function updateSelect(select, items, placeholder) {
@@ -95,6 +107,7 @@ function updateServiceSelect(services) {
 
 async function login() {
   loginHint.textContent = "";
+  setAlert("");
   state.authBase = authBaseInput.value.trim();
   state.queueBase = queueBaseInput.value.trim();
   state.tenantId = tenantIdInput.value.trim();
@@ -114,6 +127,7 @@ async function login() {
   if (!response.ok) {
     loginHint.textContent = "Login failed.";
     setStatus("Login failed");
+    setAlert("Login failed. Check credentials and tenant ID.");
     return;
   }
 
@@ -125,6 +139,7 @@ async function login() {
   updateSelect(branchSelect, state.branches, "Select branch");
   setStatus("Logged in");
   loginHint.textContent = "Login success. Pick branch & service.";
+  setAlert("");
   connectRealtime();
 }
 
@@ -312,6 +327,7 @@ async function loadActiveTicket() {
   }
   if (!response.ok) {
     setStatus("Failed to load active ticket");
+    setAlert("Failed to load active ticket.");
     return;
   }
   const ticket = await response.json();
@@ -346,9 +362,11 @@ async function performAction(action) {
   });
   if (!response.ok) {
     setStatus(`Action failed: ${action}`);
+    setAlert(`Action failed: ${action}`);
     return;
   }
   setStatus(`Action ok: ${action}`);
+  setAlert("");
   await loadActiveTicket();
   await refreshQueue();
 }
@@ -379,9 +397,11 @@ async function transferTicket() {
 
   if (!response.ok) {
     setStatus("Transfer failed");
+    setAlert("Transfer failed.");
     return;
   }
   setStatus("Transfer ok");
+  setAlert("");
   await loadActiveTicket();
   await refreshQueue();
 }
@@ -410,25 +430,55 @@ async function callNext() {
   if (response.status === 409) {
     setStatus("No tickets available");
     renderActive(null);
+    setAlert("No tickets available for the selected service.");
+    ticketList.innerHTML = "<p class=\"hint\">No waiting tickets.</p>";
     return;
   }
 
   if (!response.ok) {
     setStatus("Call next failed");
+    setAlert("Call next failed.");
     return;
   }
 
   const ticket = await response.json();
   renderActive(ticket);
   setStatus(`Called ${ticket.ticket_number}`);
+  setAlert("");
   await refreshQueue();
+}
+
+function logout() {
+  state.sessionId = null;
+  state.branches = [];
+  state.services = [];
+  state.tenantId = "";
+  state.branchId = "";
+  state.serviceId = "";
+  branchSelect.innerHTML = "";
+  serviceSelect.innerHTML = "";
+  transferSelect.innerHTML = "";
+  ticketList.innerHTML = "<p class=\"hint\">Pick a service to see tickets.</p>";
+  renderActive(null);
+  setStatus("Logged out");
+  setAlert("");
+  sendUnsubscribe();
+  if (socket) {
+    socket.close();
+    socket = null;
+  }
 }
 
 loginBtn.addEventListener("click", () => {
   login().catch(() => {
     loginHint.textContent = "Login error.";
     setStatus("Login error");
+    setAlert("Login error. Check network connectivity.");
   });
+});
+
+logoutBtn.addEventListener("click", () => {
+  logout();
 });
 
 branchSelect.addEventListener("change", () => {

@@ -28,6 +28,10 @@
           <input id="queueBase" value="http://localhost:8080" />
         </label>
         <label>
+          Realtime Base URL
+          <input id="realtimeBase" value="http://localhost:8085" />
+        </label>
+        <label>
           Tenant ID
           <input id="tenantId" placeholder="UUID" />
         </label>
@@ -65,6 +69,10 @@
             Ticket ID
             <input id="trackTicketId" placeholder="UUID" />
           </label>
+          <label>
+            Service ID (optional)
+            <input id="trackServiceId" placeholder="UUID" />
+          </label>
           <button id="trackBtn">Track</button>
         </div>
         <div class="timeline" id="timeline">
@@ -75,5 +83,6 @@
   </main>
 
   <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
 </body>
 </html>

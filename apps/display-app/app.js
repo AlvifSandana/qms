@@ -30,6 +30,7 @@ const nowTime = document.getElementById("nowTime");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 const connState = document.getElementById("connState");
 const callCount = document.getElementById("callCount");
+const alertBox = document.getElementById("alert");
 
 const maxCalls = 5;
 let configVersion = 0;
@@ -48,6 +49,15 @@ let playlistIndex = 0;
 
 function setStatus(text) {
   status.textContent = text;
+}
+
+function setAlert(message) {
+  if (!message) {
+    alertBox.hidden = true;
+    return;
+  }
+  alertBox.textContent = message;
+  alertBox.hidden = false;
 }
 
 function renderCalls() {
@@ -188,6 +198,7 @@ async function pollEvents() {
   events.forEach(handleEvent);
   setStatus("Live");
   connState.value = "Live";
+  setAlert("");
   sendDeviceStatus("online");
 }
 
@@ -228,6 +239,7 @@ function connectSockJS() {
   socket.onopen = () => {
     setStatus("Live");
     connState.value = "Live";
+    setAlert("");
     sendDeviceStatus("online");
     reconnectDelay = 1000;
     const msg = {
@@ -249,6 +261,7 @@ function connectSockJS() {
   socket.onclose = () => {
     setStatus("Disconnected");
     connState.value = "Disconnected";
+    setAlert("Connection lost. Using fallback polling.");
     sendDeviceStatus("offline");
     startPollingFallback();
     scheduleReconnect();
@@ -278,6 +291,7 @@ function startPollingFallback() {
   if (pollInterval) {
     return;
   }
+  setAlert("Connection lost. Using fallback polling.");
   pollInterval = setInterval(() => {
     pollEvents().catch(() => setStatus("Disconnected"));
   }, 1000);

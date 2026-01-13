@@ -109,6 +109,15 @@ function uuidv4() {
   return [...bytes].map((b, i) => (i === 4 || i === 6 || i === 8 || i === 10 ? "-" : "") + b.toString(16).padStart(2, "0")).join("");
 }
 
+function parseAppointmentValue(value) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const match = trimmed.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/);
+  return match ? match[0] : trimmed;
+}
+
 function updateServiceSelect(services) {
   serviceSelect.innerHTML = "";
   const empty = document.createElement("option");
@@ -199,11 +208,12 @@ async function issueTicket() {
 }
 
 async function checkInAppointment() {
-  const appointmentId = appointmentInput.value.trim();
+  const appointmentId = parseAppointmentValue(appointmentInput.value);
   if (!appointmentId) {
     setStatus("Appointment ID required");
     return;
   }
+  appointmentInput.value = appointmentId;
   const payload = {
     request_id: uuidv4(),
     tenant_id: state.tenantId,
@@ -380,6 +390,16 @@ phoneToggle.addEventListener("change", () => {
   } else {
     phoneLabel.classList.add("hidden");
   }
+});
+
+appointmentInput.addEventListener("change", () => {
+  appointmentInput.value = parseAppointmentValue(appointmentInput.value);
+});
+
+appointmentInput.addEventListener("paste", () => {
+  setTimeout(() => {
+    appointmentInput.value = parseAppointmentValue(appointmentInput.value);
+  }, 0);
 });
 
 contrastBtn.addEventListener("click", () => {

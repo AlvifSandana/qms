@@ -198,3 +198,20 @@ button[disabled] {
     gap: 10px;
   }
 }
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .card:not(.printable),
+  .header,
+  .status,
+  .actions button:not(#printBtn) {
+    display: none;
+  }
+  .card.printable {
+    border: none;
+    box-shadow: none;
+    margin: 0;
+  }
+}
