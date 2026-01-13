@@ -117,6 +117,15 @@ select {
   background: #fdfdfd;
 }
 
+textarea {
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fdfdfd;
+  resize: vertical;
+}
+
 button {
   cursor: pointer;
   border: none;
@@ -168,6 +177,21 @@ button:hover {
 
 .item button:hover {
   box-shadow: 0 10px 20px rgba(43, 179, 163, 0.25);
+}
+
+.full {
+  grid-column: 1 / -1;
+}
+
+.mono {
+  font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 16px;
+  border-radius: 12px;
+  min-height: 140px;
+  overflow: auto;
 }
 
 @media (max-width: 720px) {

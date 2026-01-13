@@ -186,6 +186,64 @@
 
     <section class="card split">
       <div>
+        <h2>Device Config</h2>
+        <div class="grid">
+          <label>
+            Device ID
+            <input id="configDeviceId" placeholder="UUID" />
+          </label>
+          <label>
+            Version
+            <input id="configVersion" type="number" min="1" value="1" />
+          </label>
+          <label class="full">
+            Config JSON
+            <textarea id="configPayload" rows="6" placeholder='{"theme":"branch-a","audio":true}'></textarea>
+          </label>
+          <button id="pushConfig">Push Config</button>
+        </div>
+        <div class="grid">
+          <label>
+            Device ID
+            <input id="statusDeviceId" placeholder="UUID" />
+          </label>
+          <label>
+            Status
+            <select id="statusValue">
+              <option value="online">online</option>
+              <option value="offline">offline</option>
+              <option value="maintenance">maintenance</option>
+            </select>
+          </label>
+          <button id="updateStatus">Update Status</button>
+        </div>
+      </div>
+      <div>
+        <h2>Roles & Users</h2>
+        <div class="grid">
+          <label>
+            Role Name
+            <input id="roleName" placeholder="Supervisor" />
+          </label>
+          <button id="createRole">Create Role</button>
+        </div>
+        <div class="grid">
+          <label>
+            Target User ID
+            <input id="targetUserId" placeholder="UUID" />
+          </label>
+          <label>
+            Role ID
+            <select id="roleAssign"></select>
+          </label>
+          <button id="assignRole">Assign Role</button>
+        </div>
+        <div class="list" id="roleList"></div>
+      </div>
+    </section>
+
+    <section class="card split">
+      <div>
         <h2>Approvals</h2>
         <div class="grid">
           <label>
@@ -201,6 +259,13 @@
         <div class="list" id="approvalList"></div>
       </div>
       <div>
+        <h2>Approval Detail</h2>
+        <pre class="mono" id="approvalDetail">Select an approval to see payload.</pre>
+      </div>
+    </section>
+
+    <section class="card split">
+      <div>
         <h2>Audit Log</h2>
         <div class="grid">
           <label>
@@ -214,6 +279,11 @@
           <button id="refreshAudit">Refresh</button>
         </div>
         <div class="list" id="auditList"></div>
+      </div>
+      <div>
+        <h2>Notes</h2>
+        <p class="hint">Config changes may require approval depending on tenant settings.</p>
+        <p class="hint">Use X-Role header to simulate RBAC: admin or supervisor.</p>
       </div>
     </section>
   </main>

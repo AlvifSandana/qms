@@ -37,9 +37,21 @@ const holidayList = document.getElementById("holidayList");
 
 const approvalStatus = document.getElementById("approvalStatus");
 const approvalList = document.getElementById("approvalList");
+const approvalDetail = document.getElementById("approvalDetail");
 const auditAction = document.getElementById("auditAction");
 const auditUser = document.getElementById("auditUser");
 const auditList = document.getElementById("auditList");
+
+const configDeviceId = document.getElementById("configDeviceId");
+const configVersion = document.getElementById("configVersion");
+const configPayload = document.getElementById("configPayload");
+const statusDeviceId = document.getElementById("statusDeviceId");
+const statusValue = document.getElementById("statusValue");
+
+const roleName = document.getElementById("roleName");
+const roleList = document.getElementById("roleList");
+const roleAssign = document.getElementById("roleAssign");
+const targetUserId = document.getElementById("targetUserId");
 
 document.getElementById("refreshAll").addEventListener("click", refreshAll);
 document.getElementById("createBranch").addEventListener("click", onCreateBranch);
@@ -51,6 +63,10 @@ document.getElementById("registerDevice").addEventListener("click", onRegisterDe
 document.getElementById("createHoliday").addEventListener("click", onCreateHoliday);
 document.getElementById("refreshApprovals").addEventListener("click", loadApprovals);
 document.getElementById("refreshAudit").addEventListener("click", loadAudit);
+document.getElementById("pushConfig").addEventListener("click", onPushConfig);
+document.getElementById("updateStatus").addEventListener("click", onUpdateStatus);
+document.getElementById("createRole").addEventListener("click", onCreateRole);
+document.getElementById("assignRole").addEventListener("click", onAssignRole);
 
 function headers() {
   return {
@@ -100,6 +116,21 @@ function renderList(target, items, formatter) {
   }
 }
 
+function itemCardActions(title, subtitle, actions = []) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "item";
+  const info = document.createElement("div");
+  info.innerHTML = `<strong>${title}</strong><br><small>${subtitle}</small>`;
+  wrapper.appendChild(info);
+  for (const action of actions) {
+    const button = document.createElement("button");
+    button.textContent = action.label;
+    button.addEventListener("click", action.onClick);
+    wrapper.appendChild(button);
+  }
+  return wrapper;
+}
+
 function itemCard(title, subtitle, actionLabel, action) {
   const wrapper = document.createElement("div");
   wrapper.className = "item";
@@ -125,6 +156,7 @@ async function refreshAll() {
       loadPolicy(),
       loadDevices(),
       loadHolidays(),
+      loadRoles(),
       loadApprovals(),
       loadAudit(),
     ]);
@@ -384,14 +416,19 @@ async function loadApprovals() {
   }
   const status = approvalStatus.value;
   const data = await api(`/api/admin/approvals?tenant_id=${tenantId}&status=${status}`);
-  renderList(approvalList, data, (approval) =>
-    itemCard(
+  renderList(approvalList, data, (approval) => {
+    const actions = [
+      { label: "View", onClick: () => showApprovalDetail(approval) },
+    ];
+    if (approval.status === "pending") {
+      actions.push({ label: "Approve", onClick: () => approveRequest(approval.approval_id) });
+    }
+    return itemCardActions(
       `${approval.request_type} · ${approval.status}`,
       `${approval.approval_id}`,
-      approval.status === "pending" ? "Approve" : null,
-      () => approveRequest(approval.approval_id)
-    )
-  );
+      actions
+    );
+  });
 }
 
 async function approveRequest(approvalId) {
@@ -423,6 +460,106 @@ async function loadAudit() {
       null
     )
   );
+}
+
+function showApprovalDetail(approval) {
+  const payload = approval.payload || "";
+  try {
+    const parsed = JSON.parse(payload);
+    approvalDetail.textContent = JSON.stringify(parsed, null, 2);
+  } catch (err) {
+    approvalDetail.textContent = payload || "No payload.";
+  }
+}
+
+async function onPushConfig() {
+  if (!configDeviceId.value.trim()) {
+    setHint("Device ID required.");
+    return;
+  }
+  let payloadValue = {};
+  if (configPayload.value.trim()) {
+    try {
+      payloadValue = JSON.parse(configPayload.value);
+    } catch (err) {
+      setHint("Config JSON is invalid.");
+      return;
+    }
+  }
+  const payload = {
+    device_id: configDeviceId.value.trim(),
+    version: Number(configVersion.value) || 1,
+    payload: payloadValue,
+  };
+  const created = await api("/api/admin/device-configs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (created?.status === "pending") {
+    setHint("Device config pending approval.");
+  } else {
+    setHint("Device config pushed.");
+  }
+}
+
+async function onUpdateStatus() {
+  if (!statusDeviceId.value.trim()) {
+    setHint("Device ID required.");
+    return;
+  }
+  await api(`/api/admin/devices/${statusDeviceId.value.trim()}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ status: statusValue.value }),
+  });
+  setHint("Device status updated.");
+  await loadDevices();
+}
+
+async function loadRoles() {
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId) {
+    roleList.textContent = "Tenant ID required.";
+    roleAssign.innerHTML = "";
+    return;
+  }
+  const data = await api(`/api/admin/roles?tenant_id=${tenantId}`);
+  renderList(roleList, data, (role) =>
+    itemCard(role.name, role.role_id, null, null)
+  );
+  roleAssign.innerHTML = "";
+  for (const role of data || []) {
+    const option = document.createElement("option");
+    option.value = role.role_id;
+    option.textContent = `${role.name} (${role.role_id.slice(0, 6)})`;
+    roleAssign.appendChild(option);
+  }
+}
+
+async function onCreateRole() {
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId || !roleName.value.trim()) {
+    setHint("Tenant ID and role name required.");
+    return;
+  }
+  await api("/api/admin/roles", {
+    method: "POST",
+    body: JSON.stringify({ tenant_id: tenantId, name: roleName.value.trim() }),
+  });
+  roleName.value = "";
+  await loadRoles();
+}
+
+async function onAssignRole() {
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId || !targetUserId.value.trim() || !roleAssign.value) {
+    setHint("Tenant ID, user ID, and role required.");
+    return;
+  }
+  await api(`/api/admin/users/${targetUserId.value.trim()}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ tenant_id: tenantId, role_id: roleAssign.value }),
+  });
+  setHint("Role assigned.");
 }
 
 refreshAll().catch((err) => setHint(err.message));
