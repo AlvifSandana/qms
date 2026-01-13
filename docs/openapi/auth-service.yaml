@@ -1,0 +1,67 @@
+openapi: 3.0.3
+info:
+  title: QMS Auth Service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8081
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /api/auth/login:
+    post:
+      summary: Username/password login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Auth session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+  /api/auth/sso/jwt:
+    post:
+      summary: JWT SSO login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Auth session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+components:
+  schemas:
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user_id:
+          type: string
+        tenant_id:
+          type: string

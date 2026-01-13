@@ -2,11 +2,12 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -21,7 +22,7 @@ import (
 const ticketNumberPad = 3
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool                *pgxpool.Pool
 	noShowReturnToQueue bool
 	priorityStreakLimit int
 }
@@ -37,7 +38,7 @@ func NewStore(pool *pgxpool.Pool, options Options) *Store {
 		limit = 3
 	}
 	return &Store{
-		pool: pool,
+		pool:                pool,
 		noShowReturnToQueue: options.NoShowReturnToQueue,
 		priorityStreakLimit: limit,
 	}
@@ -148,19 +149,42 @@ func (s *Store) CallNext(ctx context.Context, input store.CallNextInput) (models
 		return models.Ticket{}, false, store.ErrAccessDenied
 	}
 
+	status, err := getCounterStatus(ctx, tx, input.CounterID, input.BranchID)
+	if err != nil {
+		return models.Ticket{}, false, err
+	}
+	if !isCounterAvailable(status) {
+		return models.Ticket{}, false, store.ErrCounterUnavailable
+	}
+
 	calledAt := input.CalledAt
 	if calledAt.IsZero() {
 		calledAt = time.Now().UTC()
 	}
 
-	streak, err := lockRoutingState(ctx, tx, input.TenantID, input.BranchID, input.ServiceID)
+	state, err := lockRoutingState(ctx, tx, input.TenantID, input.BranchID, input.ServiceID)
 	if err != nil {
 		return models.Ticket{}, false, err
 	}
 
-	preferRegular := streak >= s.priorityStreakLimit
+	preferRegular := state.PriorityStreak >= s.priorityStreakLimit
+	policy, _, err := getServicePolicy(ctx, tx, input.TenantID, input.BranchID, input.ServiceID)
+	if err != nil {
+		return models.Ticket{}, false, err
+	}
+	appointmentWindow := normalizeAppointmentWindow(policy.AppointmentWindowSize)
+	appointmentTarget := appointmentTargetCount(policy.AppointmentRatioPercent, appointmentWindow)
+	if state.TotalServed >= appointmentWindow {
+		state.TotalServed = 0
+		state.AppointmentServed = 0
+	}
+	preferAppointment := policy.AppointmentRatioPercent > 0 && state.AppointmentServed < appointmentTarget
+	boostCutoff := time.Time{}
+	if policy.AppointmentBoostMinutes > 0 {
+		boostCutoff = calledAt.Add(time.Duration(policy.AppointmentBoostMinutes) * time.Minute)
+	}
 
-	ticket, priorityClass, err := updateNextTicket(ctx, tx, input, calledAt, preferRegular)
+	ticket, priorityClass, isAppointment, err := updateNextTicket(ctx, tx, input, calledAt, preferRegular, preferAppointment, boostCutoff)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			if err = insertActionRequest(ctx, tx, "call_next", input.RequestID, input.TenantID, input.BranchID, input.ServiceID, input.CounterID, ""); err != nil {
@@ -180,7 +204,7 @@ func (s *Store) CallNext(ctx context.Context, input store.CallNextInput) (models
 		return models.Ticket{}, false, err
 	}
 
-	if err = updateRoutingState(ctx, tx, input.TenantID, input.BranchID, input.ServiceID, streak, priorityClass); err != nil {
+	if err = updateRoutingState(ctx, tx, input.TenantID, input.BranchID, input.ServiceID, state, priorityClass, isAppointment, appointmentWindow); err != nil {
 		return models.Ticket{}, false, err
 	}
 
@@ -228,9 +252,9 @@ func (s *Store) AutoNoShow(ctx context.Context, grace time.Duration, batchSize i
 	defer rows.Close()
 
 	type noShowItem struct {
-		ticket   models.Ticket
-		tenantID string
-		branchID string
+		ticket    models.Ticket
+		tenantID  string
+		branchID  string
 		serviceID string
 	}
 	var items []noShowItem
@@ -504,9 +528,79 @@ func (s *Store) ListOutboxEvents(ctx context.Context, tenantID string, after tim
 	return events, nil
 }
 
+func (s *Store) ListTicketEvents(ctx context.Context, tenantID, ticketID string) ([]store.TicketEvent, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT e.ticket_id, e.ticket_seq, e.type, e.payload, e.created_at, e.prev_hash, e.hash
+		FROM ticket_events e
+		JOIN tickets t ON t.ticket_id = e.ticket_id
+		WHERE t.tenant_id = $1 AND e.ticket_id = $2
+		ORDER BY e.ticket_seq ASC
+	`, tenantID, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []store.TicketEvent
+	for rows.Next() {
+		var event store.TicketEvent
+		if err := rows.Scan(&event.TicketID, &event.TicketSeq, &event.Type, &event.Payload, &event.CreatedAt, &event.PrevHash, &event.Hash); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func (s *Store) ListCounters(ctx context.Context, tenantID, branchID string) ([]models.Counter, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT c.counter_id, c.branch_id, c.name, c.status
+		FROM counters c
+		JOIN branches b ON b.branch_id = c.branch_id
+		WHERE b.tenant_id = $1 AND c.branch_id = $2
+		ORDER BY c.name ASC
+	`, tenantID, branchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var counters []models.Counter
+	for rows.Next() {
+		var counter models.Counter
+		if err := rows.Scan(&counter.CounterID, &counter.BranchID, &counter.Name, &counter.Status); err != nil {
+			return nil, err
+		}
+		counters = append(counters, counter)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return counters, nil
+}
+
+func (s *Store) UpdateCounterStatus(ctx context.Context, tenantID, branchID, counterID, status string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE counters c
+		SET status = $1
+		FROM branches b
+		WHERE c.counter_id = $2 AND c.branch_id = $3 AND b.branch_id = c.branch_id AND b.tenant_id = $4
+	`, status, counterID, branchID, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrCounterNotFound
+	}
+	return nil
+}
+
 func (s *Store) ListServices(ctx context.Context, tenantID, branchID string) ([]models.Service, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT s.service_id, s.branch_id, s.name, s.code, s.sla_minutes
+		SELECT s.service_id, s.branch_id, s.name, s.code, s.sla_minutes, s.priority_policy, COALESCE(s.hours_json::text, '')
 		FROM services s
 		JOIN branches b ON b.branch_id = s.branch_id
 		WHERE b.tenant_id = $1 AND s.branch_id = $2 AND s.active = TRUE
@@ -520,7 +614,7 @@ func (s *Store) ListServices(ctx context.Context, tenantID, branchID string) ([]
 	var services []models.Service
 	for rows.Next() {
 		var svc models.Service
-		if err := rows.Scan(&svc.ServiceID, &svc.BranchID, &svc.Name, &svc.Code, &svc.SLAMinutes); err != nil {
+		if err := rows.Scan(&svc.ServiceID, &svc.BranchID, &svc.Name, &svc.Code, &svc.SLAMinutes, &svc.PriorityPolicy, &svc.HoursJSON); err != nil {
 			return nil, err
 		}
 		services = append(services, svc)
@@ -725,7 +819,7 @@ func (s *Store) TransferTicket(ctx context.Context, input store.TicketActionInpu
 		return models.Ticket{}, false, err
 	}
 
-	if err = insertOutboxEventTransfer(ctx, tx, input.TenantID, ticket, fromServiceID, input.ServiceID); err != nil {
+	if err = insertOutboxEventTransfer(ctx, tx, input.TenantID, ticket, fromServiceID, input.ServiceID, input.Reason); err != nil {
 		return models.Ticket{}, false, err
 	}
 
@@ -770,66 +864,175 @@ func ensureServiceExists(ctx context.Context, tx pgx.Tx, input store.CallNextInp
 	return nil
 }
 
-func lockRoutingState(ctx context.Context, tx pgx.Tx, tenantID, branchID, serviceID string) (int, error) {
+type routingState struct {
+	PriorityStreak    int
+	AppointmentServed int
+	TotalServed       int
+}
+
+func lockRoutingState(ctx context.Context, tx pgx.Tx, tenantID, branchID, serviceID string) (routingState, error) {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO service_routing_state (tenant_id, branch_id, service_id, priority_streak)
-		VALUES ($1, $2, $3, 0)
+		INSERT INTO service_routing_state (tenant_id, branch_id, service_id, priority_streak, appointment_served, total_served)
+		VALUES ($1, $2, $3, 0, 0, 0)
 		ON CONFLICT (tenant_id, branch_id, service_id) DO NOTHING
 	`, tenantID, branchID, serviceID)
 	if err != nil {
-		return 0, err
+		return routingState{}, err
 	}
 
-	var streak int
+	var state routingState
 	row := tx.QueryRow(ctx, `
-		SELECT priority_streak
+		SELECT priority_streak, appointment_served, total_served
 		FROM service_routing_state
 		WHERE tenant_id = $1 AND branch_id = $2 AND service_id = $3
 		FOR UPDATE
 	`, tenantID, branchID, serviceID)
-	if err := row.Scan(&streak); err != nil {
-		return 0, err
+	if err := row.Scan(&state.PriorityStreak, &state.AppointmentServed, &state.TotalServed); err != nil {
+		return routingState{}, err
 	}
-	return streak, nil
+	return state, nil
 }
 
-func updateRoutingState(ctx context.Context, tx pgx.Tx, tenantID, branchID, serviceID string, currentStreak int, priorityClass string) error {
-	newStreak := currentStreak
+func updateRoutingState(ctx context.Context, tx pgx.Tx, tenantID, branchID, serviceID string, state routingState, priorityClass string, isAppointment bool, appointmentWindow int) error {
+	newStreak := state.PriorityStreak
 	if priorityClass == "regular" {
 		newStreak = 0
 	} else if priorityClass != "" {
-		newStreak = currentStreak + 1
+		newStreak = state.PriorityStreak + 1
+	}
+
+	totalServed := state.TotalServed + 1
+	appointmentServed := state.AppointmentServed
+	if isAppointment {
+		appointmentServed++
+	}
+	if appointmentWindow > 0 && totalServed >= appointmentWindow {
+		totalServed = 0
+		appointmentServed = 0
 	}
 	_, err := tx.Exec(ctx, `
 		UPDATE service_routing_state
-		SET priority_streak = $1
-		WHERE tenant_id = $2 AND branch_id = $3 AND service_id = $4
-	`, newStreak, tenantID, branchID, serviceID)
+		SET priority_streak = $1,
+			appointment_served = $2,
+			total_served = $3
+		WHERE tenant_id = $4 AND branch_id = $5 AND service_id = $6
+	`, newStreak, appointmentServed, totalServed, tenantID, branchID, serviceID)
 	return err
 }
 
-func updateNextTicket(ctx context.Context, tx pgx.Tx, input store.CallNextInput, calledAt time.Time, preferRegular bool) (models.Ticket, string, error) {
-	ticket, class, err := updateNextTicketWithFilter(ctx, tx, input, calledAt, "AND appointment_id IS NOT NULL")
-	if err == nil {
-		return ticket, class, nil
+func updateNextTicket(ctx context.Context, tx pgx.Tx, input store.CallNextInput, calledAt time.Time, preferRegular, preferAppointment bool, boostCutoff time.Time) (models.Ticket, string, bool, error) {
+	if !boostCutoff.IsZero() {
+		ticket, class, err := updateNextAppointmentTicket(ctx, tx, input, calledAt, "", boostCutoff, preferRegular)
+		if err == nil {
+			return ticket, class, true, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return models.Ticket{}, "", false, err
+		}
 	}
 
+	if preferAppointment {
+		ticket, class, err := updateNextAppointmentTicket(ctx, tx, input, calledAt, "", time.Time{}, preferRegular)
+		if err == nil {
+			return ticket, class, true, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return models.Ticket{}, "", false, err
+		}
+	}
+
+	ticket, class, err := updateNextWalkinTicket(ctx, tx, input, calledAt, preferRegular)
+	if err == nil {
+		return ticket, class, false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return models.Ticket{}, "", false, err
+	}
+
+	ticket, class, err = updateNextAppointmentTicket(ctx, tx, input, calledAt, "", time.Time{}, preferRegular)
+	if err == nil {
+		return ticket, class, true, nil
+	}
+	return models.Ticket{}, "", false, err
+}
+
+func updateNextAppointmentTicket(ctx context.Context, tx pgx.Tx, input store.CallNextInput, calledAt time.Time, filter string, cutoff time.Time, preferRegular bool) (models.Ticket, string, error) {
 	if preferRegular {
-		ticket, class, err = updateNextTicketWithFilter(ctx, tx, input, calledAt, "AND priority_class = 'regular'")
+		ticket, class, err := updateNextAppointmentTicketWithFilter(ctx, tx, input, calledAt, "AND t.priority_class = 'regular' "+filter, cutoff)
 		if err == nil || !errors.Is(err, pgx.ErrNoRows) {
 			return ticket, class, err
 		}
-		return updateNextTicketWithFilter(ctx, tx, input, calledAt, "")
+		return updateNextAppointmentTicketWithFilter(ctx, tx, input, calledAt, filter, cutoff)
 	}
 
-	ticket, class, err = updateNextTicketWithFilter(ctx, tx, input, calledAt, "AND priority_class <> 'regular'")
+	ticket, class, err := updateNextAppointmentTicketWithFilter(ctx, tx, input, calledAt, "AND t.priority_class <> 'regular' "+filter, cutoff)
 	if err == nil || !errors.Is(err, pgx.ErrNoRows) {
 		return ticket, class, err
 	}
-	return updateNextTicketWithFilter(ctx, tx, input, calledAt, "")
+	return updateNextAppointmentTicketWithFilter(ctx, tx, input, calledAt, filter, cutoff)
 }
 
-func updateNextTicketWithFilter(ctx context.Context, tx pgx.Tx, input store.CallNextInput, calledAt time.Time, filter string) (models.Ticket, string, error) {
+func updateNextAppointmentTicketWithFilter(ctx context.Context, tx pgx.Tx, input store.CallNextInput, calledAt time.Time, filter string, cutoff time.Time) (models.Ticket, string, error) {
+	var ticket models.Ticket
+	var calledAtNull sql.NullTime
+	var counterIDNull sql.NullString
+	var priorityClass sql.NullString
+
+	args := []interface{}{input.TenantID, input.BranchID, input.ServiceID, input.CounterID, calledAt}
+	cutoffFilter := ""
+	if !cutoff.IsZero() {
+		cutoffFilter = " AND a.scheduled_at <= $6"
+		args = append(args, cutoff)
+	}
+
+	query := `
+		WITH next_ticket AS (
+			SELECT t.ticket_id
+			FROM tickets t
+			JOIN appointments a ON a.appointment_id = t.appointment_id
+			WHERE t.tenant_id = $1 AND t.branch_id = $2 AND t.service_id = $3 AND t.status = 'waiting'
+				AND t.appointment_id IS NOT NULL ` + filter + cutoffFilter + `
+			ORDER BY a.scheduled_at ASC, t.created_at ASC
+			FOR UPDATE SKIP LOCKED
+			LIMIT 1
+		)
+		UPDATE tickets
+		SET status = 'called',
+			counter_id = $4,
+			called_at = $5
+		FROM next_ticket
+		WHERE tickets.ticket_id = next_ticket.ticket_id
+		RETURNING tickets.ticket_id, tickets.ticket_number, tickets.status, tickets.created_at, tickets.called_at, tickets.counter_id, tickets.priority_class, tickets.branch_id, tickets.service_id, tickets.tenant_id
+	`
+	row := tx.QueryRow(ctx, query, args...)
+	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &priorityClass, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
+		return models.Ticket{}, "", err
+	}
+	ticket.CalledAt = nullTimePtr(calledAtNull)
+	ticket.CounterID = nullStringPtr(counterIDNull)
+	if priorityClass.Valid {
+		return ticket, priorityClass.String, nil
+	}
+	return ticket, "", nil
+}
+
+func updateNextWalkinTicket(ctx context.Context, tx pgx.Tx, input store.CallNextInput, calledAt time.Time, preferRegular bool) (models.Ticket, string, error) {
+	if preferRegular {
+		ticket, class, err := updateNextWalkinTicketWithFilter(ctx, tx, input, calledAt, "AND priority_class = 'regular'")
+		if err == nil || !errors.Is(err, pgx.ErrNoRows) {
+			return ticket, class, err
+		}
+		return updateNextWalkinTicketWithFilter(ctx, tx, input, calledAt, "")
+	}
+
+	ticket, class, err := updateNextWalkinTicketWithFilter(ctx, tx, input, calledAt, "AND priority_class <> 'regular'")
+	if err == nil || !errors.Is(err, pgx.ErrNoRows) {
+		return ticket, class, err
+	}
+	return updateNextWalkinTicketWithFilter(ctx, tx, input, calledAt, "")
+}
+
+func updateNextWalkinTicketWithFilter(ctx context.Context, tx pgx.Tx, input store.CallNextInput, calledAt time.Time, filter string) (models.Ticket, string, error) {
 	var ticket models.Ticket
 	var calledAtNull sql.NullTime
 	var counterIDNull sql.NullString
@@ -838,7 +1041,8 @@ func updateNextTicketWithFilter(ctx context.Context, tx pgx.Tx, input store.Call
 		WITH next_ticket AS (
 			SELECT ticket_id
 			FROM tickets
-			WHERE tenant_id = $1 AND branch_id = $2 AND service_id = $3 AND status = 'waiting' ` + filter + `
+			WHERE tenant_id = $1 AND branch_id = $2 AND service_id = $3 AND status = 'waiting'
+				AND appointment_id IS NULL ` + filter + `
 			ORDER BY created_at ASC
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
@@ -904,25 +1108,67 @@ func counterAllowsService(ctx context.Context, tx pgx.Tx, counterID, serviceID s
 	return count > 0, nil
 }
 
+func getCounterStatus(ctx context.Context, tx pgx.Tx, counterID, branchID string) (string, error) {
+	var status string
+	row := tx.QueryRow(ctx, `
+		SELECT status
+		FROM counters
+		WHERE counter_id = $1 AND branch_id = $2
+	`, counterID, branchID)
+	if err := row.Scan(&status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", store.ErrCounterNotFound
+		}
+		return "", err
+	}
+	return status, nil
+}
+
+func isCounterAvailable(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "active", "available", "busy":
+		return true
+	default:
+		return false
+	}
+}
+
 type servicePolicy struct {
-	NoShowGraceSeconds int
-	ReturnToQueue      bool
+	NoShowGraceSeconds      int
+	ReturnToQueue           bool
+	AppointmentRatioPercent int
+	AppointmentWindowSize   int
+	AppointmentBoostMinutes int
 }
 
 func getServicePolicy(ctx context.Context, tx pgx.Tx, tenantID, branchID, serviceID string) (servicePolicy, bool, error) {
 	var policy servicePolicy
 	row := tx.QueryRow(ctx, `
-		SELECT no_show_grace_seconds, return_to_queue
+		SELECT no_show_grace_seconds, return_to_queue, appointment_ratio_percent, appointment_window_size, appointment_boost_minutes
 		FROM service_policies
 		WHERE tenant_id = $1 AND branch_id = $2 AND service_id = $3
 	`, tenantID, branchID, serviceID)
-	if err := row.Scan(&policy.NoShowGraceSeconds, &policy.ReturnToQueue); err != nil {
+	if err := row.Scan(&policy.NoShowGraceSeconds, &policy.ReturnToQueue, &policy.AppointmentRatioPercent, &policy.AppointmentWindowSize, &policy.AppointmentBoostMinutes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return servicePolicy{}, false, nil
 		}
 		return servicePolicy{}, false, err
 	}
 	return policy, true, nil
+}
+
+func normalizeAppointmentWindow(value int) int {
+	if value <= 0 {
+		return 10
+	}
+	return value
+}
+
+func appointmentTargetCount(ratioPercent int, window int) int {
+	if ratioPercent <= 0 || window <= 0 {
+		return 0
+	}
+	return int(math.Round(float64(ratioPercent) * float64(window) / 100.0))
 }
 
 func nextTicketNumber(ctx context.Context, tx pgx.Tx, branchID, serviceID string) (int64, error) {
@@ -1026,16 +1272,19 @@ func insertOutboxEventGeneric(ctx context.Context, tx pgx.Tx, tenantID, eventTyp
 	return insertTicketEvent(ctx, tx, ticket.TicketID, eventType, payloadJSON)
 }
 
-func insertOutboxEventTransfer(ctx context.Context, tx pgx.Tx, tenantID string, ticket models.Ticket, fromServiceID, toServiceID string) error {
+func insertOutboxEventTransfer(ctx context.Context, tx pgx.Tx, tenantID string, ticket models.Ticket, fromServiceID, toServiceID, reason string) error {
 	payload := map[string]interface{}{
-		"ticket_id":     ticket.TicketID,
-		"ticket_number": ticket.TicketNumber,
-		"status":        ticket.Status,
-		"request_id":    ticket.RequestID,
+		"ticket_id":       ticket.TicketID,
+		"ticket_number":   ticket.TicketNumber,
+		"status":          ticket.Status,
+		"request_id":      ticket.RequestID,
 		"from_service_id": fromServiceID,
-		"to_service_id": toServiceID,
-		"tenant_id":     ticket.TenantID,
-		"branch_id":     ticket.BranchID,
+		"to_service_id":   toServiceID,
+		"tenant_id":       ticket.TenantID,
+		"branch_id":       ticket.BranchID,
+	}
+	if reason != "" {
+		payload["reason"] = reason
 	}
 
 	payloadJSON, err := jsonBytes(payload)
@@ -1087,10 +1336,35 @@ func jsonBytes(value interface{}) ([]byte, error) {
 }
 
 func insertTicketEvent(ctx context.Context, tx pgx.Tx, ticketID, eventType string, payload []byte) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, ticketID); err != nil {
+		return err
+	}
+
+	var lastSeq int
+	var prevHash sql.NullString
+	row := tx.QueryRow(ctx, `
+		SELECT ticket_seq, hash
+		FROM ticket_events
+		WHERE ticket_id = $1
+		ORDER BY ticket_seq DESC
+		LIMIT 1
+		FOR UPDATE
+	`, ticketID)
+	if err := row.Scan(&lastSeq, &prevHash); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	nextSeq := lastSeq + 1
+	prev := ""
+	if prevHash.Valid {
+		prev = prevHash.String
+	}
+	createdAt := time.Now().UTC()
+	hash := store.ComputeTicketEventHash(prev, ticketID, eventType, payload, createdAt, nextSeq)
+
 	_, err := tx.Exec(ctx, `
-		INSERT INTO ticket_events (ticket_id, type, payload)
-		VALUES ($1, $2, $3)
-	`, ticketID, eventType, payload)
+		INSERT INTO ticket_events (ticket_id, ticket_seq, type, payload, created_at, prev_hash, hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, ticketID, nextSeq, eventType, payload, createdAt, prev, hash)
 	return err
 }
 

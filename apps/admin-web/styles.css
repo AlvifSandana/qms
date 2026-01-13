@@ -140,6 +140,24 @@ button:hover {
   box-shadow: 0 10px 20px rgba(240, 77, 45, 0.25);
 }
 
+.ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+
+.ghost:hover {
+  box-shadow: 0 10px 20px rgba(17, 19, 26, 0.12);
+}
+
+.danger {
+  background: linear-gradient(135deg, #e23d3d, #b91c1c);
+}
+
+.danger:hover {
+  box-shadow: 0 10px 20px rgba(185, 28, 28, 0.25);
+}
+
 .hint {
   margin: 0;
   color: var(--muted);

@@ -1,0 +1,187 @@
+openapi: 3.0.3
+info:
+  title: QMS Admin Service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8083
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /api/services:
+    get:
+      summary: List services
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Service list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+    post:
+      summary: Create service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Service"
+      responses:
+        "200":
+          description: Created service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+  /api/areas:
+    get:
+      summary: List areas
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Area list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Area"
+  /api/users:
+    get:
+      summary: List users
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+        - in: query
+          name: page_size
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPage"
+  /api/users/{user_id}:
+    get:
+      summary: User detail
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /api/counters/{counter_id}/services:
+    get:
+      summary: List counter skills
+      parameters:
+        - in: path
+          name: counter_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Counter services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+  /api/devices/config:
+    get:
+      summary: Get device config
+      parameters:
+        - in: query
+          name: device_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Device config payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfig"
+        "204":
+          description: No config
+components:
+  schemas:
+    Service:
+      type: object
+      properties:
+        service_id:
+          type: string
+        name:
+          type: string
+        priority_policy:
+          type: string
+        hours_json:
+          type: string
+    Area:
+      type: object
+      properties:
+        area_id:
+          type: string
+        name:
+          type: string
+    User:
+      type: object
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+    UserPage:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+    DeviceConfig:
+      type: object
+      properties:
+        version:
+          type: integer
+        payload:
+          type: object

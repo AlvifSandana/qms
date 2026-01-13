@@ -59,14 +59,38 @@
           <select id="branchSelect"></select>
         </label>
         <label>
-          Counter ID
-          <input id="counterId" placeholder="UUID" />
+          Counter
+          <select id="counterSelect"></select>
         </label>
         <label>
           Service
           <select id="serviceSelect"></select>
         </label>
+        <label>
+          Presence
+          <select id="presenceSelect">
+            <option value="available">available</option>
+            <option value="busy">busy</option>
+            <option value="break">break</option>
+          </select>
+        </label>
+        <button id="savePresence">Save Presence</button>
         <button id="refreshBtn">Refresh</button>
+      </div>
+      <div class="grid">
+        <label>
+          Add Counter ID
+          <input id="counterInput" placeholder="UUID" />
+        </label>
+        <button id="addCounter">Add Counter</button>
+        <button id="removeCounter" class="ghost">Remove Counter</button>
+        <label>
+          Supervisor Mode
+          <select id="supervisorToggle">
+            <option value="off">off</option>
+            <option value="on">on</option>
+          </select>
+        </label>
       </div>
     </section>
 
@@ -95,6 +119,11 @@
     <section class="card">
       <h2>Waiting Tickets</h2>
       <div class="list" id="ticketList"></div>
+    </section>
+
+    <section class="card" id="supervisorPanel" hidden>
+      <h2>Supervisor Panel</h2>
+      <div class="list" id="counterList"></div>
     </section>
   </main>
 

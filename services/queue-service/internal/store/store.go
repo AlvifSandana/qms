@@ -30,13 +30,14 @@ type CallNextInput struct {
 }
 
 type TicketActionInput struct {
-	RequestID string
-	TenantID  string
-	BranchID  string
-	TicketID  string
-	CounterID string
-	ServiceID string
-	OccurredAt time.Time
+	RequestID     string
+	TenantID      string
+	BranchID      string
+	TicketID      string
+	CounterID     string
+	ServiceID     string
+	Reason        string
+	OccurredAt    time.Time
 	ReturnToQueue bool
 }
 
@@ -54,6 +55,9 @@ type TicketStore interface {
 	SnapshotTickets(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error)
 	GetActiveTicket(ctx context.Context, tenantID, branchID, counterID string) (models.Ticket, bool, error)
 	ListOutboxEvents(ctx context.Context, tenantID string, after time.Time, limit int) ([]OutboxEvent, error)
+	ListTicketEvents(ctx context.Context, tenantID, ticketID string) ([]TicketEvent, error)
+	ListCounters(ctx context.Context, tenantID, branchID string) ([]models.Counter, error)
+	UpdateCounterStatus(ctx context.Context, tenantID, branchID, counterID, status string) error
 	ListServices(ctx context.Context, tenantID, branchID string) ([]models.Service, error)
 	CheckInAppointment(ctx context.Context, requestID, tenantID, branchID, appointmentID string) (models.Ticket, error)
 }

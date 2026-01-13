@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -111,6 +112,209 @@ func TestCreateTicketIdempotency(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 ticket.created event, got %d", count)
+	}
+}
+
+func TestCallNextSkillMismatch(t *testing.T) {
+	ctx := context.Background()
+	st, pool, cleanup := setupTestStore(t, ctx)
+	t.Cleanup(cleanup)
+
+	tenantID := uuid.NewString()
+	branchID := uuid.NewString()
+	serviceA := uuid.NewString()
+	serviceB := uuid.NewString()
+	counterA := uuid.NewString()
+	counterB := uuid.NewString()
+
+	seedBaseData(t, ctx, pool, tenantID, branchID, serviceA, counterA, counterB)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO services (service_id, branch_id, name, code, active)
+		VALUES ($1, $2, 'Service B', 'SB', true)
+	`, serviceB, branchID); err != nil {
+		t.Fatalf("insert service B: %v", err)
+	}
+
+	createTicket(t, ctx, st, tenantID, branchID, serviceB, uuid.NewString())
+
+	_, _, err := st.CallNext(ctx, store.CallNextInput{
+		RequestID: uuid.NewString(),
+		TenantID:  tenantID,
+		BranchID:  branchID,
+		ServiceID: serviceB,
+		CounterID: counterA,
+	})
+	if err == nil || !errors.Is(err, store.ErrAccessDenied) {
+		t.Fatalf("expected access denied, got %v", err)
+	}
+}
+
+func TestCallNextAppointmentRatio(t *testing.T) {
+	ctx := context.Background()
+	st, pool, cleanup := setupTestStore(t, ctx)
+	t.Cleanup(cleanup)
+
+	tenantID := uuid.NewString()
+	branchID := uuid.NewString()
+	serviceID := uuid.NewString()
+	counterID := uuid.NewString()
+
+	seedBaseData(t, ctx, pool, tenantID, branchID, serviceID, counterID, uuid.NewString())
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO service_policies (tenant_id, branch_id, service_id, no_show_grace_seconds, return_to_queue, appointment_ratio_percent, appointment_window_size, appointment_boost_minutes)
+		VALUES ($1, $2, $3, 300, false, 100, 5, 0)
+	`, tenantID, branchID, serviceID); err != nil {
+		t.Fatalf("insert policy: %v", err)
+	}
+
+	apptID := createAppointment(t, ctx, pool, tenantID, branchID, serviceID, time.Now().Add(30*time.Minute))
+	apptTicket, err := st.CheckInAppointment(ctx, uuid.NewString(), tenantID, branchID, apptID)
+	if err != nil {
+		t.Fatalf("checkin appointment: %v", err)
+	}
+	createTicket(t, ctx, st, tenantID, branchID, serviceID, uuid.NewString())
+
+	ticket, _, err := st.CallNext(ctx, store.CallNextInput{
+		RequestID: uuid.NewString(),
+		TenantID:  tenantID,
+		BranchID:  branchID,
+		ServiceID: serviceID,
+		CounterID: counterID,
+	})
+	if err != nil {
+		t.Fatalf("call next: %v", err)
+	}
+	if ticket.TicketID != apptTicket.TicketID {
+		t.Fatalf("expected appointment ticket, got %s", ticket.TicketID)
+	}
+}
+
+func TestCallNextAppointmentBoost(t *testing.T) {
+	ctx := context.Background()
+	st, pool, cleanup := setupTestStore(t, ctx)
+	t.Cleanup(cleanup)
+
+	tenantID := uuid.NewString()
+	branchID := uuid.NewString()
+	serviceID := uuid.NewString()
+	counterID := uuid.NewString()
+
+	seedBaseData(t, ctx, pool, tenantID, branchID, serviceID, counterID, uuid.NewString())
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO service_policies (tenant_id, branch_id, service_id, no_show_grace_seconds, return_to_queue, appointment_ratio_percent, appointment_window_size, appointment_boost_minutes)
+		VALUES ($1, $2, $3, 300, false, 0, 5, 60)
+	`, tenantID, branchID, serviceID); err != nil {
+		t.Fatalf("insert policy: %v", err)
+	}
+
+	apptID := createAppointment(t, ctx, pool, tenantID, branchID, serviceID, time.Now().Add(20*time.Minute))
+	apptTicket, err := st.CheckInAppointment(ctx, uuid.NewString(), tenantID, branchID, apptID)
+	if err != nil {
+		t.Fatalf("checkin appointment: %v", err)
+	}
+	createTicket(t, ctx, st, tenantID, branchID, serviceID, uuid.NewString())
+
+	ticket, _, err := st.CallNext(ctx, store.CallNextInput{
+		RequestID: uuid.NewString(),
+		TenantID:  tenantID,
+		BranchID:  branchID,
+		ServiceID: serviceID,
+		CounterID: counterID,
+	})
+	if err != nil {
+		t.Fatalf("call next: %v", err)
+	}
+	if ticket.TicketID != apptTicket.TicketID {
+		t.Fatalf("expected boosted appointment ticket, got %s", ticket.TicketID)
+	}
+}
+
+func TestTicketEventHashAndRehydrate(t *testing.T) {
+	ctx := context.Background()
+	st, pool, cleanup := setupTestStore(t, ctx)
+	t.Cleanup(cleanup)
+
+	tenantID := uuid.NewString()
+	branchID := uuid.NewString()
+	serviceID := uuid.NewString()
+	counterID := uuid.NewString()
+
+	seedBaseData(t, ctx, pool, tenantID, branchID, serviceID, counterID, uuid.NewString())
+
+	ticket := createTicket(t, ctx, st, tenantID, branchID, serviceID, uuid.NewString())
+
+	called, _, err := st.CallNext(ctx, store.CallNextInput{
+		RequestID: uuid.NewString(),
+		TenantID:  tenantID,
+		BranchID:  branchID,
+		ServiceID: serviceID,
+		CounterID: counterID,
+	})
+	if err != nil {
+		t.Fatalf("call next: %v", err)
+	}
+
+	serving, _, err := st.StartServing(ctx, store.TicketActionInput{
+		RequestID: uuid.NewString(),
+		TenantID:  tenantID,
+		BranchID:  branchID,
+		TicketID:  ticket.TicketID,
+		CounterID: counterID,
+	})
+	if err != nil {
+		t.Fatalf("start serving: %v", err)
+	}
+
+	complete, _, err := st.CompleteTicket(ctx, store.TicketActionInput{
+		RequestID: uuid.NewString(),
+		TenantID:  tenantID,
+		BranchID:  branchID,
+		TicketID:  ticket.TicketID,
+	})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+
+	events, err := st.ListTicketEvents(ctx, tenantID, ticket.TicketID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) < 3 {
+		t.Fatalf("expected ticket events, got %d", len(events))
+	}
+
+	prevHash := ""
+	for idx, event := range events {
+		if event.TicketSeq != idx+1 {
+			t.Fatalf("expected seq %d, got %d", idx+1, event.TicketSeq)
+		}
+		expected := store.ComputeTicketEventHash(prevHash, event.TicketID, event.Type, event.Payload, event.CreatedAt, event.TicketSeq)
+		if event.Hash != expected {
+			t.Fatalf("hash mismatch for seq %d", event.TicketSeq)
+		}
+		prevHash = event.Hash
+	}
+
+	rehydrated, err := store.RehydrateTicket(events)
+	if err != nil {
+		t.Fatalf("rehydrate: %v", err)
+	}
+	if rehydrated.Status != complete.Status {
+		t.Fatalf("status mismatch: %s vs %s", rehydrated.Status, complete.Status)
+	}
+	if rehydrated.ServiceID != called.ServiceID {
+		t.Fatalf("service mismatch: %s vs %s", rehydrated.ServiceID, called.ServiceID)
+	}
+	if rehydrated.CounterID == nil || *rehydrated.CounterID != *called.CounterID {
+		t.Fatalf("counter mismatch")
+	}
+	if rehydrated.ServedAt == nil || serving.ServedAt == nil {
+		t.Fatalf("served_at missing")
+	}
+	if rehydrated.CompletedAt == nil || complete.CompletedAt == nil {
+		t.Fatalf("completed_at missing")
 	}
 }
 
@@ -265,4 +469,16 @@ func createTicket(t *testing.T, ctx context.Context, st *Store, tenantID, branch
 		t.Fatalf("create ticket: %v", err)
 	}
 	return ticket
+}
+
+func createAppointment(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID, branchID, serviceID string, scheduledAt time.Time) string {
+	t.Helper()
+	appointmentID := uuid.NewString()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO appointments (appointment_id, tenant_id, branch_id, service_id, scheduled_at, status)
+		VALUES ($1, $2, $3, $4, $5, 'scheduled')
+	`, appointmentID, tenantID, branchID, serviceID, scheduledAt); err != nil {
+		t.Fatalf("insert appointment: %v", err)
+	}
+	return appointmentID
 }

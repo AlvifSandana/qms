@@ -14,21 +14,24 @@ import (
 )
 
 type fakeStore struct {
-	createFn func(ctx context.Context, input store.CreateTicketInput) (models.Ticket, bool, error)
-	callFn   func(ctx context.Context, input store.CallNextInput) (models.Ticket, bool, error)
-	startFn  func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
-	completeFn func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
-	cancelFn func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
-	recallFn func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
-	holdFn func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
-	unholdFn func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
-	transferFn func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
-	noShowFn func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
-	snapshotFn func(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error)
-	outboxFn func(ctx context.Context, tenantID string, after time.Time, limit int) ([]store.OutboxEvent, error)
-	servicesFn func(ctx context.Context, tenantID, branchID string) ([]models.Service, error)
-	activeFn func(ctx context.Context, tenantID, branchID, counterID string) (models.Ticket, bool, error)
-	apptFn func(ctx context.Context, requestID, tenantID, branchID, appointmentID string) (models.Ticket, error)
+	createFn        func(ctx context.Context, input store.CreateTicketInput) (models.Ticket, bool, error)
+	callFn          func(ctx context.Context, input store.CallNextInput) (models.Ticket, bool, error)
+	startFn         func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
+	completeFn      func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
+	cancelFn        func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
+	recallFn        func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
+	holdFn          func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
+	unholdFn        func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
+	transferFn      func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
+	noShowFn        func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
+	snapshotFn      func(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error)
+	outboxFn        func(ctx context.Context, tenantID string, after time.Time, limit int) ([]store.OutboxEvent, error)
+	eventsFn        func(ctx context.Context, tenantID, ticketID string) ([]store.TicketEvent, error)
+	countersFn      func(ctx context.Context, tenantID, branchID string) ([]models.Counter, error)
+	updateCounterFn func(ctx context.Context, tenantID, branchID, counterID, status string) error
+	servicesFn      func(ctx context.Context, tenantID, branchID string) ([]models.Service, error)
+	activeFn        func(ctx context.Context, tenantID, branchID, counterID string) (models.Ticket, bool, error)
+	apptFn          func(ctx context.Context, requestID, tenantID, branchID, appointmentID string) (models.Ticket, error)
 }
 
 func (f fakeStore) CreateTicket(ctx context.Context, input store.CreateTicketInput) (models.Ticket, bool, error) {
@@ -113,6 +116,27 @@ func (f fakeStore) ListOutboxEvents(ctx context.Context, tenantID string, after 
 		return nil, nil
 	}
 	return f.outboxFn(ctx, tenantID, after, limit)
+}
+
+func (f fakeStore) ListTicketEvents(ctx context.Context, tenantID, ticketID string) ([]store.TicketEvent, error) {
+	if f.eventsFn == nil {
+		return nil, nil
+	}
+	return f.eventsFn(ctx, tenantID, ticketID)
+}
+
+func (f fakeStore) ListCounters(ctx context.Context, tenantID, branchID string) ([]models.Counter, error) {
+	if f.countersFn == nil {
+		return nil, nil
+	}
+	return f.countersFn(ctx, tenantID, branchID)
+}
+
+func (f fakeStore) UpdateCounterStatus(ctx context.Context, tenantID, branchID, counterID, status string) error {
+	if f.updateCounterFn == nil {
+		return nil
+	}
+	return f.updateCounterFn(ctx, tenantID, branchID, counterID, status)
 }
 
 func (f fakeStore) ListServices(ctx context.Context, tenantID, branchID string) ([]models.Service, error) {

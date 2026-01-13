@@ -6,14 +6,17 @@ import (
 )
 
 type Config struct {
-	Port        string
-	DatabaseURL string
-	AnomalyThresholdSeconds float64
-	AnomalyIntervalSeconds  int
-	RateLimitPerMinute int
-	RateLimitBurst int
+	Port                     string
+	DatabaseURL              string
+	AnomalyThresholdSeconds  float64
+	AnomalyIntervalSeconds   int
+	RateLimitPerMinute       int
+	RateLimitBurst           int
 	TenantRateLimitPerMinute int
-	TenantRateLimitBurst int
+	TenantRateLimitBurst     int
+	ReportIntervalSeconds    int
+	ReportWebhookURL         string
+	ReportWebhookToken       string
 }
 
 func Load() Config {
@@ -23,14 +26,17 @@ func Load() Config {
 	}
 
 	return Config{
-		Port:        port,
-		DatabaseURL: os.Getenv("DB_DSN"),
-		AnomalyThresholdSeconds: readFloat("ANOMALY_WAIT_THRESHOLD_SECONDS", 1800),
-		AnomalyIntervalSeconds: readInt("ANOMALY_INTERVAL_SECONDS", 300),
-		RateLimitPerMinute: readInt("ANALYTICS_RATE_LIMIT_PER_MIN", 120),
-		RateLimitBurst: readInt("ANALYTICS_RATE_LIMIT_BURST", 30),
+		Port:                     port,
+		DatabaseURL:              os.Getenv("DB_DSN"),
+		AnomalyThresholdSeconds:  readFloat("ANOMALY_WAIT_THRESHOLD_SECONDS", 1800),
+		AnomalyIntervalSeconds:   readInt("ANOMALY_INTERVAL_SECONDS", 300),
+		RateLimitPerMinute:       readInt("ANALYTICS_RATE_LIMIT_PER_MIN", 120),
+		RateLimitBurst:           readInt("ANALYTICS_RATE_LIMIT_BURST", 30),
 		TenantRateLimitPerMinute: readInt("ANALYTICS_TENANT_RATE_LIMIT_PER_MIN", 300),
-		TenantRateLimitBurst: readInt("ANALYTICS_TENANT_RATE_LIMIT_BURST", 60),
+		TenantRateLimitBurst:     readInt("ANALYTICS_TENANT_RATE_LIMIT_BURST", 60),
+		ReportIntervalSeconds:    readInt("ANALYTICS_REPORT_INTERVAL_SECONDS", 300),
+		ReportWebhookURL:         os.Getenv("ANALYTICS_REPORT_WEBHOOK_URL"),
+		ReportWebhookToken:       os.Getenv("ANALYTICS_REPORT_WEBHOOK_TOKEN"),
 	}
 }
 

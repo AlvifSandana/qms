@@ -47,6 +47,18 @@ func (s *Store) GetRealtime(ctx context.Context, tenantID, branchID, serviceID s
 	if err := row.Scan(&result.QueueLength, &result.Serving); err != nil {
 		return store.RealtimeResult{}, err
 	}
+
+	row = s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) AS active_counters,
+			SUM(CASE WHEN status = 'busy' THEN 1 ELSE 0 END) AS busy_counters
+		FROM counters c
+		JOIN branches b ON b.branch_id = c.branch_id
+		WHERE b.tenant_id = $1 AND c.branch_id = $2
+	`, tenantID, branchID)
+	if err := row.Scan(&result.ActiveCounters, &result.BusyCounters); err != nil {
+		return store.RealtimeResult{}, err
+	}
 	return result, nil
 }
 
@@ -86,11 +98,16 @@ func (s *Store) CreateScheduledReport(ctx context.Context, tenantID, branchID, s
 }
 
 func (s *Store) ListScheduledReports(ctx context.Context, tenantID string) ([]store.ScheduledReport, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT report_id, tenant_id, branch_id, service_id, cron, channel, recipient, active
+	query := `
+		SELECT report_id, tenant_id, branch_id, service_id, cron, channel, recipient, active, last_sent_at
 		FROM scheduled_reports
-		WHERE tenant_id = $1
-	`, tenantID)
+	`
+	args := []interface{}{}
+	if tenantID != "" {
+		query += " WHERE tenant_id = $1"
+		args = append(args, tenantID)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +116,7 @@ func (s *Store) ListScheduledReports(ctx context.Context, tenantID string) ([]st
 	var reports []store.ScheduledReport
 	for rows.Next() {
 		var r store.ScheduledReport
-		if err := rows.Scan(&r.ReportID, &r.TenantID, &r.BranchID, &r.ServiceID, &r.Cron, &r.Channel, &r.Recipient, &r.Active); err != nil {
+		if err := rows.Scan(&r.ReportID, &r.TenantID, &r.BranchID, &r.ServiceID, &r.Cron, &r.Channel, &r.Recipient, &r.Active, &r.LastSentAt); err != nil {
 			return nil, err
 		}
 		reports = append(reports, r)
@@ -108,6 +125,15 @@ func (s *Store) ListScheduledReports(ctx context.Context, tenantID string) ([]st
 		return nil, err
 	}
 	return reports, nil
+}
+
+func (s *Store) UpdateScheduledReportSent(ctx context.Context, reportID string, sentAt time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE scheduled_reports
+		SET last_sent_at = $1
+		WHERE report_id = $2
+	`, sentAt, reportID)
+	return err
 }
 
 func (s *Store) ListAnomalies(ctx context.Context, tenantID string) ([]store.Anomaly, error) {

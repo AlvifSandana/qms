@@ -139,9 +139,9 @@ func (s *Store) CreateService(ctx context.Context, service models.Service) (mode
 		service.ServiceID = uuid.NewString()
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO services (service_id, branch_id, name, code, sla_minutes, active)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, service.ServiceID, service.BranchID, service.Name, service.Code, service.SLAMinutes, service.Active)
+		INSERT INTO services (service_id, branch_id, name, code, sla_minutes, active, priority_policy, hours_json)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, service.ServiceID, service.BranchID, service.Name, service.Code, service.SLAMinutes, service.Active, service.PriorityPolicy, nullIfEmpty(service.HoursJSON))
 	if err != nil {
 		return models.Service{}, err
 	}
@@ -151,9 +151,9 @@ func (s *Store) CreateService(ctx context.Context, service models.Service) (mode
 func (s *Store) UpdateService(ctx context.Context, service models.Service) (models.Service, error) {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE services
-		SET name = $1, code = $2, sla_minutes = $3, active = $4
-		WHERE service_id = $5 AND branch_id = $6
-	`, service.Name, service.Code, service.SLAMinutes, service.Active, service.ServiceID, service.BranchID)
+		SET name = $1, code = $2, sla_minutes = $3, active = $4, priority_policy = $5, hours_json = $6
+		WHERE service_id = $7 AND branch_id = $8
+	`, service.Name, service.Code, service.SLAMinutes, service.Active, service.PriorityPolicy, nullIfEmpty(service.HoursJSON), service.ServiceID, service.BranchID)
 	if err != nil {
 		return models.Service{}, err
 	}
@@ -162,7 +162,7 @@ func (s *Store) UpdateService(ctx context.Context, service models.Service) (mode
 
 func (s *Store) ListServices(ctx context.Context, branchID string) ([]models.Service, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT service_id, branch_id, name, code, sla_minutes, active
+		SELECT service_id, branch_id, name, code, sla_minutes, active, priority_policy, COALESCE(hours_json::text, '')
 		FROM services
 		WHERE branch_id = $1
 		ORDER BY name ASC
@@ -175,7 +175,7 @@ func (s *Store) ListServices(ctx context.Context, branchID string) ([]models.Ser
 	var services []models.Service
 	for rows.Next() {
 		var svc models.Service
-		if err := rows.Scan(&svc.ServiceID, &svc.BranchID, &svc.Name, &svc.Code, &svc.SLAMinutes, &svc.Active); err != nil {
+		if err := rows.Scan(&svc.ServiceID, &svc.BranchID, &svc.Name, &svc.Code, &svc.SLAMinutes, &svc.Active, &svc.PriorityPolicy, &svc.HoursJSON); err != nil {
 			return nil, err
 		}
 		services = append(services, svc)
@@ -231,6 +231,41 @@ func (s *Store) MapCounterService(ctx context.Context, counterID, serviceID stri
 		INSERT INTO counter_services (counter_id, service_id)
 		VALUES ($1, $2)
 		ON CONFLICT DO NOTHING
+	`, counterID, serviceID)
+	return err
+}
+
+func (s *Store) ListCounterServices(ctx context.Context, counterID string) ([]models.Service, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.service_id, s.branch_id, s.name, s.code, s.sla_minutes, s.active, s.priority_policy, COALESCE(s.hours_json::text, '')
+		FROM counter_services cs
+		JOIN services s ON s.service_id = cs.service_id
+		WHERE cs.counter_id = $1
+		ORDER BY s.name ASC
+	`, counterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var services []models.Service
+	for rows.Next() {
+		var svc models.Service
+		if err := rows.Scan(&svc.ServiceID, &svc.BranchID, &svc.Name, &svc.Code, &svc.SLAMinutes, &svc.Active, &svc.PriorityPolicy, &svc.HoursJSON); err != nil {
+			return nil, err
+		}
+		services = append(services, svc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return services, nil
+}
+
+func (s *Store) RemoveCounterService(ctx context.Context, counterID, serviceID string) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM counter_services
+		WHERE counter_id = $1 AND service_id = $2
 	`, counterID, serviceID)
 	return err
 }
@@ -362,13 +397,72 @@ func (s *Store) GetLatestDeviceConfig(ctx context.Context, deviceID string) (int
 	return version, payload, nil
 }
 
+func (s *Store) ListDeviceConfigs(ctx context.Context, deviceID string, limit int) ([]models.DeviceConfig, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT device_id, version, payload, created_at
+		FROM device_configs
+		WHERE device_id = $1
+		ORDER BY version DESC
+		LIMIT $2
+	`, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var configs []models.DeviceConfig
+	for rows.Next() {
+		var cfg models.DeviceConfig
+		if err := rows.Scan(&cfg.DeviceID, &cfg.Version, &cfg.Payload, &cfg.CreatedAt); err != nil {
+			return nil, err
+		}
+		configs = append(configs, cfg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return configs, nil
+}
+
+func (s *Store) RollbackDeviceConfig(ctx context.Context, deviceID string, version int) (int, error) {
+	var payload string
+	row := s.pool.QueryRow(ctx, `
+		SELECT payload
+		FROM device_configs
+		WHERE device_id = $1 AND version = $2
+	`, deviceID, version)
+	if err := row.Scan(&payload); err != nil {
+		return 0, err
+	}
+	var nextVersion int
+	row = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(MAX(version), 0) + 1
+		FROM device_configs
+		WHERE device_id = $1
+	`, deviceID)
+	if err := row.Scan(&nextVersion); err != nil {
+		return 0, err
+	}
+	if err := s.CreateDeviceConfig(ctx, deviceID, nextVersion, payload); err != nil {
+		return 0, err
+	}
+	return nextVersion, nil
+}
+
 func (s *Store) UpsertServicePolicy(ctx context.Context, policy models.ServicePolicy) (models.ServicePolicy, error) {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO service_policies (tenant_id, branch_id, service_id, no_show_grace_seconds, return_to_queue)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO service_policies (tenant_id, branch_id, service_id, no_show_grace_seconds, return_to_queue, appointment_ratio_percent, appointment_window_size, appointment_boost_minutes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (tenant_id, branch_id, service_id)
-		DO UPDATE SET no_show_grace_seconds = EXCLUDED.no_show_grace_seconds, return_to_queue = EXCLUDED.return_to_queue
-	`, policy.TenantID, policy.BranchID, policy.ServiceID, policy.NoShowGraceSeconds, policy.ReturnToQueue)
+		DO UPDATE SET no_show_grace_seconds = EXCLUDED.no_show_grace_seconds,
+			return_to_queue = EXCLUDED.return_to_queue,
+			appointment_ratio_percent = EXCLUDED.appointment_ratio_percent,
+			appointment_window_size = EXCLUDED.appointment_window_size,
+			appointment_boost_minutes = EXCLUDED.appointment_boost_minutes
+	`, policy.TenantID, policy.BranchID, policy.ServiceID, policy.NoShowGraceSeconds, policy.ReturnToQueue, policy.AppointmentRatioPercent, policy.AppointmentWindowSize, policy.AppointmentBoostMinutes)
 	if err != nil {
 		return models.ServicePolicy{}, err
 	}
@@ -378,11 +472,11 @@ func (s *Store) UpsertServicePolicy(ctx context.Context, policy models.ServicePo
 func (s *Store) GetServicePolicy(ctx context.Context, tenantID, branchID, serviceID string) (models.ServicePolicy, bool, error) {
 	var policy models.ServicePolicy
 	row := s.pool.QueryRow(ctx, `
-		SELECT tenant_id, branch_id, service_id, no_show_grace_seconds, return_to_queue
+		SELECT tenant_id, branch_id, service_id, no_show_grace_seconds, return_to_queue, appointment_ratio_percent, appointment_window_size, appointment_boost_minutes
 		FROM service_policies
 		WHERE tenant_id = $1 AND branch_id = $2 AND service_id = $3
 	`, tenantID, branchID, serviceID)
-	if err := row.Scan(&policy.TenantID, &policy.BranchID, &policy.ServiceID, &policy.NoShowGraceSeconds, &policy.ReturnToQueue); err != nil {
+	if err := row.Scan(&policy.TenantID, &policy.BranchID, &policy.ServiceID, &policy.NoShowGraceSeconds, &policy.ReturnToQueue, &policy.AppointmentRatioPercent, &policy.AppointmentWindowSize, &policy.AppointmentBoostMinutes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.ServicePolicy{}, false, nil
 		}
@@ -429,6 +523,23 @@ func (s *Store) ListRoles(ctx context.Context, tenantID string) ([]models.Role, 
 		return nil, err
 	}
 	return roles, nil
+}
+
+func (s *Store) UpdateRoleName(ctx context.Context, tenantID, roleID, name string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE roles
+		SET name = $3
+		WHERE role_id = $1 AND tenant_id = $2
+	`, roleID, tenantID, name)
+	return err
+}
+
+func (s *Store) DeleteRole(ctx context.Context, tenantID, roleID string) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM roles
+		WHERE role_id = $1 AND tenant_id = $2
+	`, roleID, tenantID)
+	return err
 }
 
 func (s *Store) UpdateUserRole(ctx context.Context, tenantID, userID, roleID string) error {
@@ -549,6 +660,102 @@ func (s *Store) GetUserAccess(ctx context.Context, tenantID, userID string) (mod
 	}
 
 	return access, nil
+}
+
+func (s *Store) CreateUser(ctx context.Context, tenantID, email, roleID, passwordHash string) (models.UserDetail, error) {
+	userID := uuid.NewString()
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO users (user_id, tenant_id, role_id, email, password_hash, active)
+		VALUES ($1, $2, $3, $4, $5, true)
+	`, userID, tenantID, roleID, email, passwordHash)
+	if err != nil {
+		return models.UserDetail{}, err
+	}
+	return models.UserDetail{
+		UserID:   userID,
+		TenantID: tenantID,
+		Email:    email,
+		RoleID:   roleID,
+		Active:   true,
+	}, nil
+}
+
+func (s *Store) UpdateUserStatus(ctx context.Context, tenantID, userID string, active bool) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE users
+		SET active = $3
+		WHERE tenant_id = $1 AND user_id = $2
+	`, tenantID, userID, active)
+	return err
+}
+
+func (s *Store) ResetUserPassword(ctx context.Context, tenantID, userID, passwordHash string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $3
+		WHERE tenant_id = $1 AND user_id = $2
+	`, tenantID, userID, passwordHash)
+	return err
+}
+
+func (s *Store) AddUserBranchAccess(ctx context.Context, tenantID, userID, branchID string) error {
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO user_branch_access (user_id, branch_id)
+		SELECT $1, $2
+		WHERE EXISTS (SELECT 1 FROM users WHERE user_id = $1 AND tenant_id = $3)
+			AND EXISTS (SELECT 1 FROM branches WHERE branch_id = $2 AND tenant_id = $3)
+		ON CONFLICT DO NOTHING
+	`, userID, branchID, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrAccessDenied
+	}
+	return nil
+}
+
+func (s *Store) RemoveUserBranchAccess(ctx context.Context, tenantID, userID, branchID string) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM user_branch_access
+		WHERE user_id = $1 AND branch_id = $2
+			AND EXISTS (SELECT 1 FROM branches WHERE branch_id = $2 AND tenant_id = $3)
+	`, userID, branchID, tenantID)
+	return err
+}
+
+func (s *Store) AddUserServiceAccess(ctx context.Context, tenantID, userID, serviceID string) error {
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO user_service_access (user_id, service_id)
+		SELECT $1, $2
+		WHERE EXISTS (SELECT 1 FROM users WHERE user_id = $1 AND tenant_id = $3)
+			AND EXISTS (
+				SELECT 1 FROM services s
+				JOIN branches b ON b.branch_id = s.branch_id
+				WHERE s.service_id = $2 AND b.tenant_id = $3
+			)
+		ON CONFLICT DO NOTHING
+	`, userID, serviceID, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrAccessDenied
+	}
+	return nil
+}
+
+func (s *Store) RemoveUserServiceAccess(ctx context.Context, tenantID, userID, serviceID string) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM user_service_access
+		WHERE user_id = $1 AND service_id = $2
+			AND EXISTS (
+				SELECT 1 FROM services s
+				JOIN branches b ON b.branch_id = s.branch_id
+				WHERE s.service_id = $2 AND b.tenant_id = $3
+			)
+	`, userID, serviceID, tenantID)
+	return err
 }
 
 func (s *Store) CreateHoliday(ctx context.Context, holiday models.Holiday) (models.Holiday, error) {

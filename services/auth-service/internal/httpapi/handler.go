@@ -1,9 +1,13 @@
 package httpapi
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -55,6 +59,7 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/auth/login", h.handleLogin)
 	mux.HandleFunc("/api/auth/sso", h.handleSSO)
+	mux.HandleFunc("/api/auth/sso/jwt", h.handleJWTSSO)
 	mux.HandleFunc("/api/auth/me", h.handleMe)
 	return mux
 }
@@ -178,6 +183,67 @@ func (h *Handler) handleSSO(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) handleJWTSSO(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		TenantID string `json:"tenant_id"`
+		Token    string `json:"token"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+		return
+	}
+
+	payload.TenantID = strings.TrimSpace(payload.TenantID)
+	payload.Token = strings.TrimSpace(payload.Token)
+	if payload.TenantID == "" || payload.Token == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id and token are required")
+		return
+	}
+	if !isValidUUID(payload.TenantID) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
+		return
+	}
+
+	secret := os.Getenv("AUTH_SSO_JWT_SECRET")
+	if secret == "" {
+		writeError(w, http.StatusInternalServerError, "config_missing", "AUTH_SSO_JWT_SECRET is not set")
+		return
+	}
+	issuer := strings.TrimSpace(os.Getenv("AUTH_SSO_JWT_ISSUER"))
+	subject, email, err := validateJWT(payload.Token, []byte(secret), issuer)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_token", "invalid SSO token")
+		return
+	}
+
+	result, err := h.store.SSOLogin(r.Context(), payload.TenantID, "jwt", subject, email)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		return
+	}
+
+	resp := loginResponse{
+		SessionID: result.Session.SessionID,
+		ExpiresAt: result.Session.ExpiresAt.Format(time.RFC3339),
+		User: userInfo{
+			UserID:   result.User.UserID,
+			TenantID: result.User.TenantID,
+			Role:     result.User.RoleName,
+			Email:    result.User.Email,
+		},
+		Branches: result.Branches,
+		Services: result.Services,
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -247,6 +313,50 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func validateJWT(token string, secret []byte, issuer string) (string, string, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", "", errors.New("invalid token")
+	}
+	signed := parts[0] + "." + parts[1]
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return "", "", err
+	}
+	mac := hmac.New(sha256.New, secret)
+	if _, err := mac.Write([]byte(signed)); err != nil {
+		return "", "", err
+	}
+	expected := mac.Sum(nil)
+	if !hmac.Equal(signature, expected) {
+		return "", "", errors.New("signature mismatch")
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", "", err
+	}
+	var claims struct {
+		Subject string `json:"sub"`
+		Email   string `json:"email"`
+		Issuer  string `json:"iss"`
+		Expires int64  `json:"exp"`
+	}
+	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
+		return "", "", err
+	}
+	if claims.Subject == "" {
+		return "", "", errors.New("missing subject")
+	}
+	if issuer != "" && claims.Issuer != issuer {
+		return "", "", errors.New("issuer mismatch")
+	}
+	if claims.Expires > 0 && time.Now().Unix() > claims.Expires {
+		return "", "", errors.New("token expired")
+	}
+	return claims.Subject, claims.Email, nil
 }
 
 func isValidUUID(value string) bool {

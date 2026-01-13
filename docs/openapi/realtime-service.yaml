@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info:
+  title: QMS Realtime Service
+  version: 1.0.0
+servers:
+  - url: http://localhost:8085
+paths:
+  /realtime/info:
+    get:
+      summary: SockJS info endpoint
+      responses:
+        "200":
+          description: SockJS info
+  /realtime/{server}/{session}/websocket:
+    get:
+      summary: SockJS WebSocket endpoint
+      parameters:
+        - in: path
+          name: server
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switching Protocols

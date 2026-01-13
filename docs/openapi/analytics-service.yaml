@@ -1,0 +1,120 @@
+openapi: 3.0.3
+info:
+  title: QMS Analytics Service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8084
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /api/realtime:
+    get:
+      summary: Realtime KPIs
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: branch_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: service_id
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: KPI snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeKPI"
+  /api/anomalies:
+    get:
+      summary: List anomalies
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Anomaly list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Anomaly"
+  /api/reports:
+    get:
+      summary: List scheduled reports
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Report list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Report"
+components:
+  schemas:
+    RealtimeKPI:
+      type: object
+      properties:
+        waiting:
+          type: integer
+        serving:
+          type: integer
+        avg_wait_seconds:
+          type: number
+        active_counters:
+          type: integer
+        busy_counters:
+          type: integer
+    Anomaly:
+      type: object
+      properties:
+        anomaly_id:
+          type: string
+        type:
+          type: string
+        value:
+          type: number
+        threshold:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+    Report:
+      type: object
+      properties:
+        report_id:
+          type: string
+        cron:
+          type: string
+        channel:
+          type: string
+        recipient:
+          type: string
+        active:
+          type: boolean
+        last_sent_at:
+          type: string
+          format: date-time

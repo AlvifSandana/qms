@@ -59,6 +59,20 @@
           <button id="createBranch">Create Branch</button>
         </div>
         <div class="list" id="branchList"></div>
+        <h3 class="subhead">Areas</h3>
+        <div class="grid">
+          <label>
+            Branch ID
+            <input id="areaBranchId" placeholder="UUID" />
+          </label>
+          <label>
+            Area Name
+            <input id="areaName" placeholder="Lobby" />
+          </label>
+          <button id="createArea">Create Area</button>
+          <button id="loadAreas" class="ghost">Load Areas</button>
+        </div>
+        <div class="list" id="areaList"></div>
       </div>
       <div>
         <h2>Services</h2>
@@ -78,6 +92,18 @@
           <label>
             SLA Minutes
             <input id="serviceSla" type="number" min="1" value="5" />
+          </label>
+          <label>
+            Priority Policy
+            <select id="servicePriority">
+              <option value="fifo">fifo</option>
+              <option value="priority">priority</option>
+              <option value="mixed">mixed</option>
+            </select>
+          </label>
+          <label class="full">
+            Hours JSON (optional)
+            <textarea id="serviceHours" rows="4" placeholder='{"mon":["08:00-16:00"],"sat":[]}'></textarea>
           </label>
           <button id="createService">Create Service</button>
         </div>
@@ -110,6 +136,14 @@
           </label>
           <button id="mapCounter">Map Service</button>
         </div>
+        <div class="grid">
+          <label>
+            Counter ID
+            <input id="skillsCounterId" placeholder="UUID" />
+          </label>
+          <button id="loadCounterSkills" class="ghost">Load Skills</button>
+        </div>
+        <div class="list" id="counterSkillsList"></div>
         <div class="list" id="counterList"></div>
       </div>
       <div>
@@ -134,9 +168,24 @@
               <option value="false">false</option>
             </select>
           </label>
+          <label>
+            Appointment Ratio (%)
+            <input id="policyApptRatio" type="number" min="0" max="100" value="0" />
+          </label>
+          <label>
+            Appointment Window
+            <input id="policyApptWindow" type="number" min="1" value="10" />
+          </label>
+          <label>
+            Appointment Boost (min)
+            <input id="policyApptBoost" type="number" min="0" value="0" />
+          </label>
           <button id="savePolicy">Save Policy</button>
         </div>
         <div class="list" id="policyView"></div>
+        <p class="hint">Appointment ratio controls how many appointment tickets are preferred per window (e.g. 60% of 10 calls).</p>
+        <p class="hint">Boost minutes prioritizes appointments whose scheduled time is within the window before they would normally be called.</p>
+        <p class="hint" id="policyHint"></p>
       </div>
     </section>
 
@@ -217,6 +266,19 @@
           </label>
           <button id="updateStatus">Update Status</button>
         </div>
+        <h3 class="subhead">Config History</h3>
+        <div class="grid">
+          <label>
+            Device ID
+            <input id="historyDeviceId" placeholder="UUID" />
+          </label>
+          <label>
+            Limit
+            <input id="historyLimit" type="number" min="1" value="10" />
+          </label>
+          <button id="loadHistory">Load History</button>
+        </div>
+        <div class="list" id="historyList"></div>
       </div>
       <div>
         <h2>Roles & Users</h2>
@@ -239,6 +301,18 @@
           <button id="assignRole">Assign Role</button>
         </div>
         <div class="list" id="roleList"></div>
+        <div class="grid">
+          <label>
+            Edit Role Name
+            <input id="roleEditName" placeholder="New role name" />
+          </label>
+          <label>
+            Role ID
+            <input id="roleEditId" placeholder="UUID" />
+          </label>
+          <button id="updateRole">Update Role</button>
+          <button id="deleteRole" class="danger">Delete Role</button>
+        </div>
         <div class="grid">
           <button id="loadUser">Load User Detail</button>
           <button id="clearUser" class="ghost">Clear</button>
@@ -264,9 +338,55 @@
           <button id="nextPage" class="ghost">Next</button>
         </div>
         <div class="list" id="userList"></div>
+        <div class="grid">
+          <label>
+            Create User Email
+            <input id="userEmail" placeholder="user@example.com" />
+          </label>
+          <label>
+            Role ID
+            <select id="userRoleSelect"></select>
+          </label>
+          <label>
+            Temp Password (optional)
+            <input id="userPassword" placeholder="auto if empty" />
+          </label>
+          <button id="createUser">Create User</button>
+        </div>
+        <div class="grid">
+          <label>
+            Active
+            <select id="userActive">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <label>
+            New Password (optional)
+            <input id="resetPasswordValue" placeholder="auto if empty" />
+          </label>
+          <button id="saveUserStatus">Save Status</button>
+          <button id="resetPassword" class="danger">Reset Password</button>
+        </div>
         <h3 class="subhead">Access Scope</h3>
         <div class="grid">
           <button id="loadAccess">Load Access</button>
+        </div>
+        <div class="grid">
+          <label>
+            Branch ID
+            <input id="accessBranchId" placeholder="UUID" />
+          </label>
+          <button id="addBranchAccess">Add Branch</button>
+          <button id="removeBranchAccess" class="danger">Remove Branch</button>
+        </div>
+        <div class="grid">
+          <label>
+            Service ID
+            <input id="accessServiceId" placeholder="UUID" />
+          </label>
+          <button id="addServiceAccess">Add Service</button>
+          <button id="removeServiceAccess" class="danger">Remove Service</button>
         </div>
         <div class="list" id="accessBranches"></div>
         <div class="list" id="accessServices"></div>
@@ -319,6 +439,7 @@
             <input id="auditUser" placeholder="UUID" />
           </label>
           <button id="refreshAudit">Refresh</button>
+          <button id="filterApprovalAudit" class="ghost">Approval Prefs Only</button>
         </div>
         <div class="list" id="auditList"></div>
       </div>

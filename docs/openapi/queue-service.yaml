@@ -1,0 +1,233 @@
+openapi: 3.0.3
+info:
+  title: QMS Queue Service API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /api/tickets:
+    post:
+      summary: Create a ticket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketCreate"
+      responses:
+        "200":
+          description: Ticket created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/tickets/snapshot:
+    get:
+      summary: Snapshot of active tickets
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: branch_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: service_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Active tickets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Ticket"
+  /api/tickets/{ticket_id}/events:
+    get:
+      summary: Ticket event history
+      parameters:
+        - in: path
+          name: ticket_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TicketEvent"
+  /api/events:
+    get:
+      summary: Outbox events feed
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: after
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Event list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Event"
+  /api/counters:
+    get:
+      summary: List counters
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Counter list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Counter"
+  /api/counters/{counter_id}/status:
+    put:
+      summary: Update counter status
+      parameters:
+        - in: path
+          name: counter_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: available
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Counter"
+components:
+  schemas:
+    TicketCreate:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        branch_id:
+          type: string
+        service_id:
+          type: string
+        priority:
+          type: boolean
+      required: [tenant_id, branch_id, service_id]
+    Ticket:
+      type: object
+      properties:
+        ticket_id:
+          type: string
+        ticket_number:
+          type: string
+        status:
+          type: string
+        counter_id:
+          type: string
+        service_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        called_at:
+          type: string
+          format: date-time
+    TicketEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+        ticket_id:
+          type: string
+        event_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        payload:
+          type: object
+    Event:
+      type: object
+      properties:
+        event_id:
+          type: string
+        type:
+          type: string
+        payload:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+    Counter:
+      type: object
+      properties:
+        counter_id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+    Error:
+      type: object
+      properties:
+        request_id:
+          type: string
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string

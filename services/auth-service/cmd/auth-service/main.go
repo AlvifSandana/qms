@@ -36,7 +36,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      limiter.Middleware(handler.Routes()),
+		Handler:      httpapi.LoggingMiddleware(limiter.Middleware(handler.Routes())),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

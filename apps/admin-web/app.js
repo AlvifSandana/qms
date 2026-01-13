@@ -7,10 +7,15 @@ const sessionHint = document.getElementById("sessionHint");
 
 const branchName = document.getElementById("branchName");
 const branchList = document.getElementById("branchList");
+const areaBranchId = document.getElementById("areaBranchId");
+const areaName = document.getElementById("areaName");
+const areaList = document.getElementById("areaList");
 const serviceBranchId = document.getElementById("serviceBranchId");
 const serviceName = document.getElementById("serviceName");
 const serviceCode = document.getElementById("serviceCode");
 const serviceSla = document.getElementById("serviceSla");
+const servicePriority = document.getElementById("servicePriority");
+const serviceHours = document.getElementById("serviceHours");
 const serviceList = document.getElementById("serviceList");
 
 const counterBranchId = document.getElementById("counterBranchId");
@@ -18,12 +23,18 @@ const counterName = document.getElementById("counterName");
 const counterList = document.getElementById("counterList");
 const mapCounterId = document.getElementById("mapCounterId");
 const mapServiceId = document.getElementById("mapServiceId");
+const skillsCounterId = document.getElementById("skillsCounterId");
+const counterSkillsList = document.getElementById("counterSkillsList");
 
 const policyBranchId = document.getElementById("policyBranchId");
 const policyServiceId = document.getElementById("policyServiceId");
 const policyGrace = document.getElementById("policyGrace");
 const policyReturn = document.getElementById("policyReturn");
+const policyApptRatio = document.getElementById("policyApptRatio");
+const policyApptWindow = document.getElementById("policyApptWindow");
+const policyApptBoost = document.getElementById("policyApptBoost");
 const policyView = document.getElementById("policyView");
+const policyHint = document.getElementById("policyHint");
 
 const deviceBranchId = document.getElementById("deviceBranchId");
 const deviceAreaId = document.getElementById("deviceAreaId");
@@ -49,24 +60,39 @@ const configVersion = document.getElementById("configVersion");
 const configPayload = document.getElementById("configPayload");
 const statusDeviceId = document.getElementById("statusDeviceId");
 const statusValue = document.getElementById("statusValue");
+const historyDeviceId = document.getElementById("historyDeviceId");
+const historyLimit = document.getElementById("historyLimit");
+const historyList = document.getElementById("historyList");
 
 const roleName = document.getElementById("roleName");
 const roleList = document.getElementById("roleList");
 const roleAssign = document.getElementById("roleAssign");
+const roleEditName = document.getElementById("roleEditName");
+const roleEditId = document.getElementById("roleEditId");
 const targetUserId = document.getElementById("targetUserId");
 const userDetail = document.getElementById("userDetail");
 const userQuery = document.getElementById("userQuery");
 const userLimit = document.getElementById("userLimit");
 const userPage = document.getElementById("userPage");
 const userList = document.getElementById("userList");
+const userEmail = document.getElementById("userEmail");
+const userRoleSelect = document.getElementById("userRoleSelect");
+const userPassword = document.getElementById("userPassword");
+const userActive = document.getElementById("userActive");
+const resetPasswordValue = document.getElementById("resetPasswordValue");
 const accessBranches = document.getElementById("accessBranches");
 const accessServices = document.getElementById("accessServices");
+const accessBranchId = document.getElementById("accessBranchId");
+const accessServiceId = document.getElementById("accessServiceId");
 
 document.getElementById("refreshAll").addEventListener("click", refreshAll);
 document.getElementById("createBranch").addEventListener("click", onCreateBranch);
+document.getElementById("createArea").addEventListener("click", onCreateArea);
+document.getElementById("loadAreas").addEventListener("click", loadAreas);
 document.getElementById("createService").addEventListener("click", onCreateService);
 document.getElementById("createCounter").addEventListener("click", onCreateCounter);
 document.getElementById("mapCounter").addEventListener("click", onMapCounter);
+document.getElementById("loadCounterSkills").addEventListener("click", loadCounterSkills);
 document.getElementById("savePolicy").addEventListener("click", onSavePolicy);
 document.getElementById("registerDevice").addEventListener("click", onRegisterDevice);
 document.getElementById("createHoliday").addEventListener("click", onCreateHoliday);
@@ -74,15 +100,33 @@ document.getElementById("refreshApprovals").addEventListener("click", loadApprov
 document.getElementById("refreshAudit").addEventListener("click", loadAudit);
 document.getElementById("pushConfig").addEventListener("click", onPushConfig);
 document.getElementById("updateStatus").addEventListener("click", onUpdateStatus);
+document.getElementById("loadHistory").addEventListener("click", loadDeviceConfigHistory);
 document.getElementById("createRole").addEventListener("click", onCreateRole);
+document.getElementById("updateRole").addEventListener("click", onUpdateRole);
+document.getElementById("deleteRole").addEventListener("click", onDeleteRole);
 document.getElementById("assignRole").addEventListener("click", onAssignRole);
 document.getElementById("saveApprovalPref").addEventListener("click", onSaveApprovalPref);
 document.getElementById("loadUser").addEventListener("click", loadUserDetail);
 document.getElementById("clearUser").addEventListener("click", clearUserDetail);
 document.getElementById("searchUsers").addEventListener("click", searchUsers);
+document.getElementById("createUser").addEventListener("click", onCreateUser);
+document.getElementById("saveUserStatus").addEventListener("click", onSaveUserStatus);
+document.getElementById("resetPassword").addEventListener("click", onResetPassword);
 document.getElementById("loadAccess").addEventListener("click", loadUserAccess);
+document.getElementById("addBranchAccess").addEventListener("click", onAddBranchAccess);
+document.getElementById("removeBranchAccess").addEventListener("click", onRemoveBranchAccess);
+document.getElementById("addServiceAccess").addEventListener("click", onAddServiceAccess);
+document.getElementById("removeServiceAccess").addEventListener("click", onRemoveServiceAccess);
 document.getElementById("prevPage").addEventListener("click", () => changePage(-1));
 document.getElementById("nextPage").addEventListener("click", () => changePage(1));
+document.getElementById("filterApprovalAudit").addEventListener("click", filterApprovalAudit);
+
+window.addEventListener("error", (event) => {
+  setHint(event.error?.message || event.message || "Unexpected error.");
+});
+window.addEventListener("unhandledrejection", (event) => {
+  setHint(event.reason?.message || "Unexpected error.");
+});
 
 function headers() {
   return {
@@ -197,6 +241,18 @@ async function loadBranches() {
   );
 }
 
+async function loadAreas() {
+  const branchId = areaBranchId.value.trim();
+  if (!branchId) {
+    areaList.textContent = "Branch ID required.";
+    return;
+  }
+  const data = await api(`/api/admin/areas?branch_id=${branchId}`);
+  renderList(areaList, data, (area) =>
+    itemCard(area.name, area.area_id, null, null)
+  );
+}
+
 async function onCreateBranch() {
   const tenantId = tenantIdInput.value.trim();
   if (!tenantId || !branchName.value.trim()) {
@@ -215,6 +271,24 @@ async function onCreateBranch() {
   await loadBranches();
 }
 
+async function onCreateArea() {
+  const branchId = areaBranchId.value.trim();
+  if (!branchId || !areaName.value.trim()) {
+    setHint("Branch ID and area name are required.");
+    return;
+  }
+  const payload = { branch_id: branchId, name: areaName.value.trim() };
+  const created = await api("/api/admin/areas", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  areaName.value = "";
+  if (created?.status === "pending") {
+    setHint("Area pending approval.");
+  }
+  await loadAreas();
+}
+
 async function deleteBranch(branchId) {
   const tenantId = tenantIdInput.value.trim();
   await api(`/api/admin/branches/${branchId}?tenant_id=${tenantId}`, { method: "DELETE" });
@@ -231,7 +305,7 @@ async function loadServices() {
   renderList(serviceList, data, (service) =>
     itemCard(
       `${service.name} (${service.code})`,
-      `${service.service_id} · SLA ${service.sla_minutes}m`,
+      `${service.service_id} · SLA ${service.sla_minutes}m · ${service.priority_policy || "fifo"}`,
       null,
       null
     )
@@ -244,11 +318,21 @@ async function onCreateService() {
     setHint("Branch ID, name, and code are required.");
     return;
   }
+  if (serviceHours.value.trim()) {
+    try {
+      JSON.parse(serviceHours.value);
+    } catch (err) {
+      setHint("Hours JSON is invalid.");
+      return;
+    }
+  }
   const payload = {
     branch_id: branchId,
     name: serviceName.value.trim(),
     code: serviceCode.value.trim().toUpperCase(),
     sla_minutes: Number(serviceSla.value) || 5,
+    priority_policy: servicePriority.value || "fifo",
+    hours_json: serviceHours.value.trim(),
   };
   const created = await api("/api/admin/services", {
     method: "POST",
@@ -256,6 +340,7 @@ async function onCreateService() {
   });
   serviceName.value = "";
   serviceCode.value = "";
+  serviceHours.value = "";
   if (created?.status === "pending") {
     setHint("Service pending approval.");
   }
@@ -304,6 +389,32 @@ async function onMapCounter() {
   setHint("Mapping saved.");
 }
 
+async function loadCounterSkills() {
+  const counterId = skillsCounterId.value.trim();
+  if (!counterId) {
+    counterSkillsList.textContent = "Counter ID required.";
+    return;
+  }
+  const data = await api(`/api/admin/counters/${counterId}/services`);
+  renderList(counterSkillsList, data, (service) =>
+    itemCardActions(
+      `${service.name} (${service.code})`,
+      service.service_id,
+      [
+        { label: "Remove", onClick: () => removeCounterSkill(counterId, service.service_id) },
+      ]
+    )
+  );
+}
+
+async function removeCounterSkill(counterId, serviceId) {
+  await api(`/api/admin/counters/${counterId}/services`, {
+    method: "DELETE",
+    body: JSON.stringify({ service_id: serviceId }),
+  });
+  await loadCounterSkills();
+}
+
 async function loadPolicy() {
   const tenantId = tenantIdInput.value.trim();
   const branchId = policyBranchId.value.trim();
@@ -312,11 +423,29 @@ async function loadPolicy() {
     policyView.textContent = "Tenant, branch, and service IDs required.";
     return;
   }
+  policyHint.textContent = "";
   const data = await api(`/api/admin/policies/service?tenant_id=${tenantId}&branch_id=${branchId}&service_id=${serviceId}`);
+  if (data) {
+    if (typeof data.no_show_grace_seconds === "number") {
+      policyGrace.value = String(data.no_show_grace_seconds);
+    }
+    if (typeof data.return_to_queue === "boolean") {
+      policyReturn.value = data.return_to_queue ? "true" : "false";
+    }
+    if (typeof data.appointment_ratio_percent === "number") {
+      policyApptRatio.value = String(data.appointment_ratio_percent);
+    }
+    if (typeof data.appointment_window_size === "number") {
+      policyApptWindow.value = String(data.appointment_window_size);
+    }
+    if (typeof data.appointment_boost_minutes === "number") {
+      policyApptBoost.value = String(data.appointment_boost_minutes);
+    }
+  }
   renderList(policyView, data ? [data] : [], (policy) =>
     itemCard(
-      `Grace ${policy.no_show_grace_seconds}s`,
-      `Return to queue: ${policy.return_to_queue}`,
+      `Grace ${policy.no_show_grace_seconds}s · Ratio ${policy.appointment_ratio_percent || 0}%`,
+      `Return: ${policy.return_to_queue} · Window ${policy.appointment_window_size || 10} · Boost ${policy.appointment_boost_minutes || 0}m`,
       null,
       null
     )
@@ -331,12 +460,31 @@ async function onSavePolicy() {
     setHint("Tenant, branch, service IDs required.");
     return;
   }
+  policyHint.textContent = "";
+  const ratio = Number(policyApptRatio.value);
+  const windowSize = Number(policyApptWindow.value);
+  const boostMinutes = Number(policyApptBoost.value);
+  if (Number.isNaN(ratio) || ratio < 0 || ratio > 100) {
+    policyHint.textContent = "Appointment ratio must be between 0 and 100.";
+    return;
+  }
+  if (Number.isNaN(windowSize) || windowSize < 1) {
+    policyHint.textContent = "Appointment window must be 1 or greater.";
+    return;
+  }
+  if (Number.isNaN(boostMinutes) || boostMinutes < 0) {
+    policyHint.textContent = "Appointment boost must be 0 or greater.";
+    return;
+  }
   const payload = {
     tenant_id: tenantId,
     branch_id: branchId,
     service_id: serviceId,
     no_show_grace_seconds: Number(policyGrace.value) || 300,
     return_to_queue: policyReturn.value === "true",
+    appointment_ratio_percent: ratio || 0,
+    appointment_window_size: windowSize || 10,
+    appointment_boost_minutes: boostMinutes || 0,
   };
   const created = await api("/api/admin/policies/service", {
     method: "POST",
@@ -519,6 +667,11 @@ async function onSaveApprovalPref() {
   approvalPrefHint.textContent = "Preferences saved.";
 }
 
+function filterApprovalAudit() {
+  auditAction.value = "approval.prefs_update";
+  loadAudit().catch((err) => setHint(err.message));
+}
+
 function clearUserDetail() {
   userDetail.textContent = "No user loaded.";
 }
@@ -531,6 +684,9 @@ async function loadUserDetail() {
     return;
   }
   const data = await api(`/api/admin/users/${userId}?tenant_id=${tenantId}`);
+  if (typeof data.active === "boolean") {
+    userActive.value = data.active ? "true" : "false";
+  }
   userDetail.textContent = JSON.stringify(data, null, 2);
 }
 
@@ -577,23 +733,69 @@ async function onUpdateStatus() {
   await loadDevices();
 }
 
+async function loadDeviceConfigHistory() {
+  const deviceId = historyDeviceId.value.trim();
+  if (!deviceId) {
+    historyList.textContent = "Device ID required.";
+    return;
+  }
+  const limit = Number(historyLimit.value) || 10;
+  const data = await api(`/api/admin/device-configs/${deviceId}?limit=${limit}`);
+  renderList(historyList, data, (config) =>
+    itemCardActions(
+      `Version ${config.version}`,
+      `${config.created_at || "unknown"} · ${config.device_id}`,
+      [
+        { label: "Rollback", onClick: () => rollbackDeviceConfig(deviceId, config.version) },
+      ]
+    )
+  );
+}
+
+async function rollbackDeviceConfig(deviceId, version) {
+  if (!confirm(`Rollback device ${deviceId} to version ${version}?`)) {
+    return;
+  }
+  await api(`/api/admin/device-configs/${deviceId}/rollback`, {
+    method: "POST",
+    body: JSON.stringify({ version }),
+  });
+  setHint(`Rollback queued for version ${version}.`);
+  await loadDeviceConfigHistory();
+}
+
 async function loadRoles() {
   const tenantId = tenantIdInput.value.trim();
   if (!tenantId) {
     roleList.textContent = "Tenant ID required.";
     roleAssign.innerHTML = "";
+    userRoleSelect.innerHTML = "";
     return;
   }
   const data = await api(`/api/admin/roles?tenant_id=${tenantId}`);
   renderList(roleList, data, (role) =>
-    itemCard(role.name, role.role_id, null, null)
+    itemCardActions(
+      role.name,
+      role.role_id,
+      [
+        {
+          label: "Edit",
+          onClick: () => {
+            roleEditId.value = role.role_id;
+            roleEditName.value = role.name;
+          },
+        },
+      ]
+    )
   );
   roleAssign.innerHTML = "";
+  userRoleSelect.innerHTML = "";
   for (const role of data || []) {
     const option = document.createElement("option");
     option.value = role.role_id;
     option.textContent = `${role.name} (${role.role_id.slice(0, 6)})`;
     roleAssign.appendChild(option);
+    userRoleSelect.appendChild(option.cloneNode(true));
   }
 }
 
@@ -611,6 +813,38 @@ async function onCreateRole() {
   await loadRoles();
 }
 
+async function onUpdateRole() {
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId || !roleEditId.value.trim() || !roleEditName.value.trim()) {
+    setHint("Tenant ID, role ID, and new name required.");
+    return;
+  }
+  await api(`/api/admin/roles/${roleEditId.value.trim()}`, {
+    method: "PUT",
+    body: JSON.stringify({ tenant_id: tenantId, name: roleEditName.value.trim() }),
+  });
+  setHint("Role updated.");
+  await loadRoles();
+}
+
+async function onDeleteRole() {
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId || !roleEditId.value.trim()) {
+    setHint("Tenant ID and role ID required.");
+    return;
+  }
+  if (!confirm("Delete this role? This cannot be undone.")) {
+    return;
+  }
+  await api(`/api/admin/roles/${roleEditId.value.trim()}?tenant_id=${tenantId}`, {
+    method: "DELETE",
+  });
+  roleEditId.value = "";
+  roleEditName.value = "";
+  setHint("Role deleted.");
+  await loadRoles();
+}
+
 async function onAssignRole() {
   const tenantId = tenantIdInput.value.trim();
   if (!tenantId || !targetUserId.value.trim() || !roleAssign.value) {
@@ -623,6 +857,69 @@ async function onAssignRole() {
   });
   setHint("Role assigned.");
   loadUserDetail().catch(() => {});
+}
+
+async function onCreateUser() {
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId || !userEmail.value.trim() || !userRoleSelect.value) {
+    setHint("Tenant ID, email, and role required.");
+    return;
+  }
+  const payload = {
+    tenant_id: tenantId,
+    email: userEmail.value.trim(),
+    role_id: userRoleSelect.value,
+    password: userPassword.value.trim(),
+  };
+  const data = await api("/api/admin/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  userEmail.value = "";
+  userPassword.value = "";
+  if (data?.temp_password) {
+    setHint(`User created. Temp password: ${data.temp_password}`);
+  } else {
+    setHint("User created.");
+  }
+  await searchUsers();
+}
+
+async function onSaveUserStatus() {
+  const tenantId = tenantIdInput.value.trim();
+  const userId = targetUserId.value.trim();
+  if (!tenantId || !userId) {
+    setHint("Tenant ID and user ID required.");
+    return;
+  }
+  await api(`/api/admin/users/${userId}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ tenant_id: tenantId, active: userActive.value === "true" }),
+  });
+  setHint("User status updated.");
+  await loadUserDetail();
+}
+
+async function onResetPassword() {
+  const tenantId = tenantIdInput.value.trim();
+  const userId = targetUserId.value.trim();
+  if (!tenantId || !userId) {
+    setHint("Tenant ID and user ID required.");
+    return;
+  }
+  if (!confirm(`Reset password for user ${userId}?`)) {
+    return;
+  }
+  const payload = {
+    tenant_id: tenantId,
+    new_password: resetPasswordValue.value.trim(),
+  };
+  const data = await api(`/api/admin/users/${userId}/reset-password`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  resetPasswordValue.value = "";
+  setHint(`Temp password: ${data.temp_password}`);
 }
 
 async function searchUsers() {
@@ -679,6 +976,76 @@ async function loadUserAccess() {
   renderList(accessServices, data.services, (item) =>
     itemCard(item.name, item.id, null, null)
   );
+}
+
+async function onAddBranchAccess() {
+  const tenantId = tenantIdInput.value.trim();
+  const userId = targetUserId.value.trim();
+  const branchId = accessBranchId.value.trim();
+  if (!tenantId || !userId || !branchId) {
+    setHint("Tenant ID, user ID, and branch ID required.");
+    return;
+  }
+  await api(`/api/admin/users/${userId}/access/branches`, {
+    method: "POST",
+    body: JSON.stringify({ tenant_id: tenantId, id: branchId }),
+  });
+  accessBranchId.value = "";
+  await loadUserAccess();
+}
+
+async function onRemoveBranchAccess() {
+  const tenantId = tenantIdInput.value.trim();
+  const userId = targetUserId.value.trim();
+  const branchId = accessBranchId.value.trim();
+  if (!tenantId || !userId || !branchId) {
+    setHint("Tenant ID, user ID, and branch ID required.");
+    return;
+  }
+  if (!confirm(`Remove branch ${branchId} from user ${userId}?`)) {
+    return;
+  }
+  await api(`/api/admin/users/${userId}/access/branches`, {
+    method: "DELETE",
+    body: JSON.stringify({ tenant_id: tenantId, id: branchId }),
+  });
+  accessBranchId.value = "";
+  await loadUserAccess();
+}
+
+async function onAddServiceAccess() {
+  const tenantId = tenantIdInput.value.trim();
+  const userId = targetUserId.value.trim();
+  const serviceId = accessServiceId.value.trim();
+  if (!tenantId || !userId || !serviceId) {
+    setHint("Tenant ID, user ID, and service ID required.");
+    return;
+  }
+  await api(`/api/admin/users/${userId}/access/services`, {
+    method: "POST",
+    body: JSON.stringify({ tenant_id: tenantId, id: serviceId }),
+  });
+  accessServiceId.value = "";
+  await loadUserAccess();
+}
+
+async function onRemoveServiceAccess() {
+  const tenantId = tenantIdInput.value.trim();
+  const userId = targetUserId.value.trim();
+  const serviceId = accessServiceId.value.trim();
+  if (!tenantId || !userId || !serviceId) {
+    setHint("Tenant ID, user ID, and service ID required.");
+    return;
+  }
+  if (!confirm(`Remove service ${serviceId} from user ${userId}?`)) {
+    return;
+  }
+  await api(`/api/admin/users/${userId}/access/services`, {
+    method: "DELETE",
+    body: JSON.stringify({ tenant_id: tenantId, id: serviceId }),
+  });
+  accessServiceId.value = "";
+  await loadUserAccess();
 }
 
 refreshAll().catch((err) => setHint(err.message));

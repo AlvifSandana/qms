@@ -22,6 +22,8 @@ type Store interface {
 	CreateCounter(ctx context.Context, counter models.Counter) (models.Counter, error)
 	ListCounters(ctx context.Context, branchID string) ([]models.Counter, error)
 	MapCounterService(ctx context.Context, counterID, serviceID string) error
+	ListCounterServices(ctx context.Context, counterID string) ([]models.Service, error)
+	RemoveCounterService(ctx context.Context, counterID, serviceID string) error
 
 	InsertAudit(ctx context.Context, audit models.AuditLog) error
 	ListAudit(ctx context.Context, tenantID, actionType, userID string) ([]models.AuditLog, error)
@@ -31,16 +33,27 @@ type Store interface {
 	UpdateDeviceStatus(ctx context.Context, deviceID, status string) error
 	CreateDeviceConfig(ctx context.Context, deviceID string, version int, payload string) error
 	GetLatestDeviceConfig(ctx context.Context, deviceID string) (int, string, error)
+	ListDeviceConfigs(ctx context.Context, deviceID string, limit int) ([]models.DeviceConfig, error)
+	RollbackDeviceConfig(ctx context.Context, deviceID string, version int) (int, error)
 
 	UpsertServicePolicy(ctx context.Context, policy models.ServicePolicy) (models.ServicePolicy, error)
 	GetServicePolicy(ctx context.Context, tenantID, branchID, serviceID string) (models.ServicePolicy, bool, error)
 
 	CreateRole(ctx context.Context, role models.Role) (models.Role, error)
 	ListRoles(ctx context.Context, tenantID string) ([]models.Role, error)
+	UpdateRoleName(ctx context.Context, tenantID, roleID, name string) error
+	DeleteRole(ctx context.Context, tenantID, roleID string) error
 	UpdateUserRole(ctx context.Context, tenantID, userID, roleID string) error
 	GetUser(ctx context.Context, tenantID, userID string) (models.UserDetail, bool, error)
 	ListUsers(ctx context.Context, tenantID, query string, limit, offset int) ([]models.UserDetail, error)
 	GetUserAccess(ctx context.Context, tenantID, userID string) (models.UserAccess, error)
+	CreateUser(ctx context.Context, tenantID, email, roleID, passwordHash string) (models.UserDetail, error)
+	UpdateUserStatus(ctx context.Context, tenantID, userID string, active bool) error
+	ResetUserPassword(ctx context.Context, tenantID, userID, passwordHash string) error
+	AddUserBranchAccess(ctx context.Context, tenantID, userID, branchID string) error
+	RemoveUserBranchAccess(ctx context.Context, tenantID, userID, branchID string) error
+	AddUserServiceAccess(ctx context.Context, tenantID, userID, serviceID string) error
+	RemoveUserServiceAccess(ctx context.Context, tenantID, userID, serviceID string) error
 
 	CreateHoliday(ctx context.Context, holiday models.Holiday) (models.Holiday, error)
 	ListHolidays(ctx context.Context, tenantID, branchID string) ([]models.Holiday, error)

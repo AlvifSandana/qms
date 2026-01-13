@@ -13,12 +13,14 @@ type Area struct {
 }
 
 type Service struct {
-	ServiceID  string `json:"service_id"`
-	BranchID   string `json:"branch_id"`
-	Name       string `json:"name"`
-	Code       string `json:"code"`
-	SLAMinutes int    `json:"sla_minutes"`
-	Active     bool   `json:"active"`
+	ServiceID      string `json:"service_id"`
+	BranchID       string `json:"branch_id"`
+	Name           string `json:"name"`
+	Code           string `json:"code"`
+	SLAMinutes     int    `json:"sla_minutes"`
+	Active         bool   `json:"active"`
+	PriorityPolicy string `json:"priority_policy"`
+	HoursJSON      string `json:"hours_json"`
 }
 
 type Counter struct {
@@ -51,12 +53,22 @@ type Device struct {
 	LastSeen string `json:"last_seen"`
 }
 
+type DeviceConfig struct {
+	DeviceID  string `json:"device_id"`
+	Version   int    `json:"version"`
+	Payload   string `json:"payload"`
+	CreatedAt string `json:"created_at"`
+}
+
 type ServicePolicy struct {
-	TenantID          string `json:"tenant_id"`
-	BranchID          string `json:"branch_id"`
-	ServiceID         string `json:"service_id"`
-	NoShowGraceSeconds int   `json:"no_show_grace_seconds"`
-	ReturnToQueue     bool   `json:"return_to_queue"`
+	TenantID                string `json:"tenant_id"`
+	BranchID                string `json:"branch_id"`
+	ServiceID               string `json:"service_id"`
+	NoShowGraceSeconds      int    `json:"no_show_grace_seconds"`
+	ReturnToQueue           bool   `json:"return_to_queue"`
+	AppointmentRatioPercent int    `json:"appointment_ratio_percent"`
+	AppointmentWindowSize   int    `json:"appointment_window_size"`
+	AppointmentBoostMinutes int    `json:"appointment_boost_minutes"`
 }
 
 type Role struct {
@@ -94,8 +106,8 @@ type Holiday struct {
 }
 
 type ApprovalRequest struct {
-	ApprovalID string `json:"approval_id"`
-	TenantID   string `json:"tenant_id"`
+	ApprovalID  string `json:"approval_id"`
+	TenantID    string `json:"tenant_id"`
 	RequestType string `json:"request_type"`
 	Payload     string `json:"payload"`
 	Status      string `json:"status"`

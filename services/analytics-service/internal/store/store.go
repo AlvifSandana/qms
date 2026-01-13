@@ -12,8 +12,10 @@ type KPIResult struct {
 }
 
 type RealtimeResult struct {
-	QueueLength int `json:"queue_length"`
-	Serving     int `json:"serving"`
+	QueueLength    int `json:"queue_length"`
+	Serving        int `json:"serving"`
+	ActiveCounters int `json:"active_counters"`
+	BusyCounters   int `json:"busy_counters"`
 }
 
 type TicketRow struct {
@@ -32,30 +34,32 @@ type Store interface {
 	ListTickets(ctx context.Context, tenantID, branchID, serviceID string, from, to time.Time) ([]TicketRow, error)
 	CreateScheduledReport(ctx context.Context, tenantID, branchID, serviceID, cron, channel, recipient string) error
 	ListScheduledReports(ctx context.Context, tenantID string) ([]ScheduledReport, error)
+	UpdateScheduledReportSent(ctx context.Context, reportID string, sentAt time.Time) error
 	ListAnomalies(ctx context.Context, tenantID string) ([]Anomaly, error)
 	InsertAnomaly(ctx context.Context, anomaly Anomaly) error
 	ListServices(ctx context.Context) ([]ServiceRef, error)
 }
 
 type ScheduledReport struct {
-	ReportID  string `json:"report_id"`
-	TenantID  string `json:"tenant_id"`
-	BranchID  string `json:"branch_id"`
-	ServiceID string `json:"service_id"`
-	Cron      string `json:"cron"`
-	Channel   string `json:"channel"`
-	Recipient string `json:"recipient"`
-	Active    bool   `json:"active"`
+	ReportID   string     `json:"report_id"`
+	TenantID   string     `json:"tenant_id"`
+	BranchID   string     `json:"branch_id"`
+	ServiceID  string     `json:"service_id"`
+	Cron       string     `json:"cron"`
+	Channel    string     `json:"channel"`
+	Recipient  string     `json:"recipient"`
+	Active     bool       `json:"active"`
+	LastSentAt *time.Time `json:"last_sent_at"`
 }
 
 type Anomaly struct {
-	AnomalyID string  `json:"anomaly_id"`
-	TenantID  string  `json:"tenant_id"`
-	BranchID  string  `json:"branch_id"`
-	ServiceID string  `json:"service_id"`
-	Type      string  `json:"type"`
-	Value     float64 `json:"value"`
-	Threshold float64 `json:"threshold"`
+	AnomalyID string    `json:"anomaly_id"`
+	TenantID  string    `json:"tenant_id"`
+	BranchID  string    `json:"branch_id"`
+	ServiceID string    `json:"service_id"`
+	Type      string    `json:"type"`
+	Value     float64   `json:"value"`
+	Threshold float64   `json:"threshold"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"qms/admin-service/internal/store"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Handler struct {
@@ -44,10 +47,12 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/admin/devices", h.handleDevices)
 	mux.HandleFunc("/api/admin/devices/", h.handleDeviceStatus)
 	mux.HandleFunc("/api/admin/device-configs", h.handleDeviceConfigs)
+	mux.HandleFunc("/api/admin/device-configs/", h.handleDeviceConfigHistory)
 	mux.HandleFunc("/api/devices/config", h.handleDeviceConfigFetch)
 	mux.HandleFunc("/api/devices/status", h.handleDeviceStatusUpdate)
 	mux.HandleFunc("/api/admin/audit", h.handleAudit)
 	mux.HandleFunc("/api/admin/roles", h.handleRoles)
+	mux.HandleFunc("/api/admin/roles/", h.handleRole)
 	mux.HandleFunc("/api/admin/users/", h.handleUserRole)
 	mux.HandleFunc("/api/admin/users", h.handleUsers)
 	mux.HandleFunc("/api/admin/holidays", h.handleHolidays)
@@ -233,6 +238,13 @@ func (h *Handler) handleServices(w http.ResponseWriter, r *http.Request) {
 		if svc.SLAMinutes <= 0 {
 			svc.SLAMinutes = 5
 		}
+		if svc.PriorityPolicy == "" {
+			svc.PriorityPolicy = "fifo"
+		}
+		if svc.HoursJSON != "" && !json.Valid([]byte(svc.HoursJSON)) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "hours_json must be valid JSON")
+			return
+		}
 		if h.maybeCreateApproval(w, r, "", "service.create", svc) {
 			return
 		}
@@ -271,6 +283,13 @@ func (h *Handler) handleService(w http.ResponseWriter, r *http.Request) {
 	}
 	if svc.SLAMinutes <= 0 {
 		svc.SLAMinutes = 5
+	}
+	if svc.PriorityPolicy == "" {
+		svc.PriorityPolicy = "fifo"
+	}
+	if svc.HoursJSON != "" && !json.Valid([]byte(svc.HoursJSON)) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "hours_json must be valid JSON")
+		return
 	}
 	svc.ServiceID = serviceID
 	if h.maybeCreateApproval(w, r, "", "service.update", svc) {
@@ -333,9 +352,6 @@ func (h *Handler) handleCounters(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleCounterServices(w http.ResponseWriter, r *http.Request) {
-	if !requirePermission(w, r, permissionConfigWrite) {
-		return
-	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/admin/counters/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 2 || parts[1] != "services" {
@@ -347,29 +363,66 @@ func (h *Handler) handleCounterServices(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_request", "counter_id must be a UUID")
 		return
 	}
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodGet:
+		if !requirePermission(w, r, permissionConfigRead) {
+			return
+		}
+		services, err := h.store.ListCounterServices(r.Context(), counterID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(w, http.StatusOK, services)
+	case http.MethodPost:
+		if !requirePermission(w, r, permissionConfigWrite) {
+			return
+		}
+		var payload struct {
+			ServiceID string `json:"service_id"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if !isValidUUID(payload.ServiceID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "service_id must be a UUID")
+			return
+		}
+		if h.maybeCreateApproval(w, r, "", "counter.map_service", map[string]string{"counter_id": counterID, "service_id": payload.ServiceID}) {
+			return
+		}
+		if err := h.store.MapCounterService(r.Context(), counterID, payload.ServiceID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, "", "counter.map_service", "counter", counterID)
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		if !requirePermission(w, r, permissionConfigWrite) {
+			return
+		}
+		var payload struct {
+			ServiceID string `json:"service_id"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if !isValidUUID(payload.ServiceID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "service_id must be a UUID")
+			return
+		}
+		if h.maybeCreateApproval(w, r, "", "counter.unmap_service", map[string]string{"counter_id": counterID, "service_id": payload.ServiceID}) {
+			return
+		}
+		if err := h.store.RemoveCounterService(r.Context(), counterID, payload.ServiceID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, "", "counter.unmap_service", "counter", counterID)
+		w.WriteHeader(http.StatusNoContent)
+	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
 	}
-	var payload struct {
-		ServiceID string `json:"service_id"`
-	}
-	if !decodeRequest(w, r, &payload) {
-		return
-	}
-	if !isValidUUID(payload.ServiceID) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "service_id must be a UUID")
-		return
-	}
-	if h.maybeCreateApproval(w, r, "", "counter.map_service", map[string]string{"counter_id": counterID, "service_id": payload.ServiceID}) {
-		return
-	}
-	if err := h.store.MapCounterService(r.Context(), counterID, payload.ServiceID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
-		return
-	}
-	h.recordAudit(r, "", "counter.map_service", "counter", counterID)
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) handleServicePolicy(w http.ResponseWriter, r *http.Request) {
@@ -409,6 +462,16 @@ func (h *Handler) handleServicePolicy(w http.ResponseWriter, r *http.Request) {
 		}
 		if policy.NoShowGraceSeconds <= 0 {
 			policy.NoShowGraceSeconds = 300
+		}
+		if policy.AppointmentRatioPercent < 0 || policy.AppointmentRatioPercent > 100 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "appointment_ratio_percent must be 0-100")
+			return
+		}
+		if policy.AppointmentWindowSize <= 0 {
+			policy.AppointmentWindowSize = 10
+		}
+		if policy.AppointmentBoostMinutes < 0 {
+			policy.AppointmentBoostMinutes = 0
 		}
 		if h.maybeCreateApproval(w, r, policy.TenantID, "policy.update", policy) {
 			return
@@ -540,6 +603,65 @@ func (h *Handler) handleDeviceConfigs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) handleDeviceConfigHistory(w http.ResponseWriter, r *http.Request) {
+	if !requirePermission(w, r, permissionConfigRead) {
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/admin/device-configs/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 1 || parts[0] == "" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	deviceID := parts[0]
+	if !isValidUUID(deviceID) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "device_id must be a UUID")
+		return
+	}
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		limit := 10
+		if limitRaw := strings.TrimSpace(r.URL.Query().Get("limit")); limitRaw != "" {
+			if parsed, err := strconv.Atoi(limitRaw); err == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+		configs, err := h.store.ListDeviceConfigs(r.Context(), deviceID, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(w, http.StatusOK, configs)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "rollback" && r.Method == http.MethodPost {
+		if !requirePermission(w, r, permissionConfigWrite) {
+			return
+		}
+		var payload struct {
+			Version int `json:"version"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if payload.Version <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "version is required")
+			return
+		}
+		newVersion, err := h.store.RollbackDeviceConfig(r.Context(), deviceID, payload.Version)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, "", "device.config_rollback", "device", deviceID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"device_id": deviceID,
+			"version":   newVersion,
+		})
+		return
+	}
+	w.WriteHeader(http.StatusMethodNotAllowed)
+}
+
 func (h *Handler) handleDeviceConfigFetch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -650,6 +772,51 @@ func (h *Handler) handleRoles(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) handleRole(w http.ResponseWriter, r *http.Request) {
+	if !requirePermission(w, r, permissionRolesManage) {
+		return
+	}
+	roleID := strings.TrimPrefix(r.URL.Path, "/api/admin/roles/")
+	if !isValidUUID(roleID) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "role_id must be a UUID")
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var payload struct {
+			TenantID string `json:"tenant_id"`
+			Name     string `json:"name"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if !isValidUUID(payload.TenantID) || payload.Name == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id and name are required")
+			return
+		}
+		if err := h.store.UpdateRoleName(r.Context(), payload.TenantID, roleID, payload.Name); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, payload.TenantID, "role.update", "role", roleID)
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+		if !isValidUUID(tenantID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		if err := h.store.DeleteRole(r.Context(), tenantID, roleID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, tenantID, "role.delete", "role", roleID)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 func (h *Handler) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	if !requirePermission(w, r, permissionRolesManage) {
 		return
@@ -701,6 +868,113 @@ func (h *Handler) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, access)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "status" {
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			TenantID string `json:"tenant_id"`
+			Active   bool   `json:"active"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if !isValidUUID(payload.TenantID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		if err := h.store.UpdateUserStatus(r.Context(), payload.TenantID, userID, payload.Active); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, payload.TenantID, "user.status_update", "user", userID)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "reset-password" {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			TenantID    string `json:"tenant_id"`
+			NewPassword string `json:"new_password"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if !isValidUUID(payload.TenantID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		password := strings.TrimSpace(payload.NewPassword)
+		if password == "" {
+			password = generateTempPassword()
+		}
+		hash, err := bcryptHash(password)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "password hash failed")
+			return
+		}
+		if err := h.store.ResetUserPassword(r.Context(), payload.TenantID, userID, hash); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, payload.TenantID, "user.reset_password", "user", userID)
+		writeJSON(w, http.StatusOK, map[string]string{
+			"user_id":       userID,
+			"temp_password": password,
+		})
+		return
+	}
+	if len(parts) == 3 && parts[1] == "access" {
+		resource := parts[2]
+		if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var payload struct {
+			TenantID string `json:"tenant_id"`
+			ID       string `json:"id"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if !isValidUUID(payload.TenantID) || !isValidUUID(payload.ID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id and id are required")
+			return
+		}
+		var err error
+		switch resource {
+		case "branches":
+			if r.Method == http.MethodPost {
+				err = h.store.AddUserBranchAccess(r.Context(), payload.TenantID, userID, payload.ID)
+			} else {
+				err = h.store.RemoveUserBranchAccess(r.Context(), payload.TenantID, userID, payload.ID)
+			}
+		case "services":
+			if r.Method == http.MethodPost {
+				err = h.store.AddUserServiceAccess(r.Context(), payload.TenantID, userID, payload.ID)
+			} else {
+				err = h.store.RemoveUserServiceAccess(r.Context(), payload.TenantID, userID, payload.ID)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			if errors.Is(err, store.ErrAccessDenied) {
+				writeError(w, http.StatusForbidden, "access_denied", "invalid access assignment")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, payload.TenantID, "user.access_update", "user", userID)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if len(parts) != 2 || parts[1] != "role" {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -732,37 +1006,71 @@ func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	if !requirePermission(w, r, permissionRolesManage) {
 		return
 	}
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+		query := strings.TrimSpace(r.URL.Query().Get("query"))
+		limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+		pageRaw := strings.TrimSpace(r.URL.Query().Get("page"))
+		limit := 25
+		if limitRaw != "" {
+			if parsed, err := strconv.Atoi(limitRaw); err == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+		page := 1
+		if pageRaw != "" {
+			if parsed, err := strconv.Atoi(pageRaw); err == nil && parsed > 0 {
+				page = parsed
+			}
+		}
+		offset := (page - 1) * limit
+		if !isValidUUID(tenantID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		users, err := h.store.ListUsers(r.Context(), tenantID, query, limit, offset)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(w, http.StatusOK, users)
+	case http.MethodPost:
+		var payload struct {
+			TenantID string `json:"tenant_id"`
+			Email    string `json:"email"`
+			RoleID   string `json:"role_id"`
+			Password string `json:"password"`
+		}
+		if !decodeRequest(w, r, &payload) {
+			return
+		}
+		if !isValidUUID(payload.TenantID) || !isValidUUID(payload.RoleID) || payload.Email == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id, role_id, and email are required")
+			return
+		}
+		password := strings.TrimSpace(payload.Password)
+		if password == "" {
+			password = generateTempPassword()
+		}
+		hash, err := bcryptHash(password)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "password hash failed")
+			return
+		}
+		user, err := h.store.CreateUser(r.Context(), payload.TenantID, payload.Email, payload.RoleID, hash)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		h.recordAudit(r, payload.TenantID, "user.create", "user", user.UserID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"user":          user,
+			"temp_password": password,
+		})
+	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
 	}
-	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
-	query := strings.TrimSpace(r.URL.Query().Get("query"))
-	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
-	pageRaw := strings.TrimSpace(r.URL.Query().Get("page"))
-	limit := 25
-	if limitRaw != "" {
-		if parsed, err := strconv.Atoi(limitRaw); err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
-	page := 1
-	if pageRaw != "" {
-		if parsed, err := strconv.Atoi(pageRaw); err == nil && parsed > 0 {
-			page = parsed
-		}
-	}
-	offset := (page - 1) * limit
-	if !isValidUUID(tenantID) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
-		return
-	}
-	users, err := h.store.ListUsers(r.Context(), tenantID, query, limit, offset)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
-		return
-	}
-	writeJSON(w, http.StatusOK, users)
 }
 
 func (h *Handler) handleHolidays(w http.ResponseWriter, r *http.Request) {
@@ -866,7 +1174,7 @@ func (h *Handler) handleApprovalPrefs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"tenant_id": tenantID,
+			"tenant_id":         tenantID,
 			"approvals_enabled": enabled,
 		})
 	case http.MethodPost:
@@ -890,7 +1198,7 @@ func (h *Handler) handleApprovalPrefs(w http.ResponseWriter, r *http.Request) {
 		}
 		h.recordAudit(r, payload.TenantID, "approval.prefs_update", "tenant", payload.TenantID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"tenant_id": payload.TenantID,
+			"tenant_id":         payload.TenantID,
 			"approvals_enabled": payload.ApprovalsEnabled,
 		})
 	default:
@@ -969,10 +1277,10 @@ func isValidUUID(value string) bool {
 type permission string
 
 const (
-	permissionConfigRead   permission = "config.read"
-	permissionConfigWrite  permission = "config.write"
-	permissionAuditRead    permission = "audit.read"
-	permissionRolesManage  permission = "roles.manage"
+	permissionConfigRead     permission = "config.read"
+	permissionConfigWrite    permission = "config.write"
+	permissionAuditRead      permission = "audit.read"
+	permissionRolesManage    permission = "roles.manage"
 	permissionApprovalManage permission = "approval.manage"
 )
 
@@ -1149,4 +1457,20 @@ func (h *Handler) recordAudit(r *http.Request, tenantID, actionType, targetType,
 		IP:          r.RemoteAddr,
 		UserAgent:   r.UserAgent(),
 	})
+}
+
+func generateTempPassword() string {
+	buf := make([]byte, 9)
+	if _, err := rand.Read(buf); err != nil {
+		return "TempPass123!"
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func bcryptHash(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }

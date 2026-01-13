@@ -14,7 +14,7 @@ import (
 )
 
 type Handler struct {
-	store store.TicketStore
+	store               store.TicketStore
 	noShowReturnToQueue bool
 }
 
@@ -38,8 +38,8 @@ type callNextRequest struct {
 }
 
 type errorResponse struct {
-	RequestID string         `json:"request_id"`
-	Error     responseError  `json:"error"`
+	RequestID string        `json:"request_id"`
+	Error     responseError `json:"error"`
 }
 
 type responseError struct {
@@ -53,7 +53,7 @@ type Options struct {
 
 func NewHandler(store store.TicketStore, options Options) *Handler {
 	return &Handler{
-		store: store,
+		store:               store,
 		noShowReturnToQueue: options.NoShowReturnToQueue,
 	}
 }
@@ -68,6 +68,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/tickets/", h.handleTicketActions)
 	mux.HandleFunc("/api/appointments/checkin", h.handleAppointmentCheckin)
 	mux.HandleFunc("/api/events", h.handleEvents)
+	mux.HandleFunc("/api/counters", h.handleCounters)
+	mux.HandleFunc("/api/counters/", h.handleCounterStatus)
 	mux.HandleFunc("/api/services", h.handleServices)
 	return mux
 }
@@ -165,6 +167,21 @@ func isValidPhone(value string) bool {
 		}
 	}
 	return true
+}
+
+func normalizeCounterStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "available":
+		return "available"
+	case "busy":
+		return "busy"
+	case "break":
+		return "break"
+	case "active":
+		return "active"
+	default:
+		return ""
+	}
 }
 
 func (h *Handler) handleCallNext(w http.ResponseWriter, r *http.Request) {
@@ -366,6 +383,76 @@ func (h *Handler) handleEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, events)
 }
 
+func (h *Handler) handleCounters(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	branchID := strings.TrimSpace(r.URL.Query().Get("branch_id"))
+	if tenantID == "" || branchID == "" {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id are required")
+		return
+	}
+	if !isValidUUID(tenantID) || !isValidUUID(branchID) {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id must be UUIDs")
+		return
+	}
+
+	counters, err := h.store.ListCounters(r.Context(), tenantID, branchID)
+	if err != nil {
+		status, code, msg := mapError(err)
+		writeError(w, "", status, code, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, counters)
+}
+
+func (h *Handler) handleCounterStatus(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/counters/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || parts[1] != "status" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	counterID := parts[0]
+	if !isValidUUID(counterID) {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "counter_id must be a UUID")
+		return
+	}
+
+	var payload struct {
+		TenantID string `json:"tenant_id"`
+		BranchID string `json:"branch_id"`
+		Status   string `json:"status"`
+	}
+	if !decodeRequest(w, r, &payload) {
+		return
+	}
+	payload.Status = normalizeCounterStatus(payload.Status)
+	if !isValidUUID(payload.TenantID) || !isValidUUID(payload.BranchID) {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id are required")
+		return
+	}
+	if payload.Status == "" {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "status is required")
+		return
+	}
+
+	if err := h.store.UpdateCounterStatus(r.Context(), payload.TenantID, payload.BranchID, counterID, payload.Status); err != nil {
+		status, code, msg := mapError(err)
+		writeError(w, "", status, code, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) handleServices(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -394,24 +481,37 @@ func (h *Handler) handleServices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleTicketActions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
 	path := strings.TrimPrefix(r.URL.Path, "/api/tickets/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 3 || parts[1] != "actions" {
+	if len(parts) < 2 {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	ticketID := parts[0]
-	action := parts[2]
 	if !isValidUUID(ticketID) {
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "ticket_id must be a UUID")
 		return
 	}
+
+	if len(parts) == 2 && parts[1] == "events" {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		h.handleTicketEvents(w, r, ticketID)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if len(parts) != 3 || parts[1] != "actions" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	action := parts[2]
 
 	switch action {
 	case "start":
@@ -435,6 +535,25 @@ func (h *Handler) handleTicketActions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) handleTicketEvents(w http.ResponseWriter, r *http.Request, ticketID string) {
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	if tenantID == "" {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id is required")
+		return
+	}
+	if !isValidUUID(tenantID) {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
+		return
+	}
+	events, err := h.store.ListTicketEvents(r.Context(), tenantID, ticketID)
+	if err != nil {
+		status, code, msg := mapError(err)
+		writeError(w, "", status, code, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, events)
+}
+
 type ticketActionRequest struct {
 	RequestID string `json:"request_id"`
 	TenantID  string `json:"tenant_id"`
@@ -448,6 +567,7 @@ type transferRequest struct {
 	BranchID    string `json:"branch_id"`
 	CounterID   string `json:"counter_id"`
 	ToServiceID string `json:"to_service_id"`
+	Reason      string `json:"reason"`
 }
 
 func (h *Handler) handleStartServing(w http.ResponseWriter, r *http.Request, ticketID string) {
@@ -466,11 +586,11 @@ func (h *Handler) handleStartServing(w http.ResponseWriter, r *http.Request, tic
 	}
 
 	ticket, _, err := h.store.StartServing(r.Context(), store.TicketActionInput{
-		RequestID: req.RequestID,
-		TenantID:  req.TenantID,
-		BranchID:  req.BranchID,
-		TicketID:  ticketID,
-		CounterID: req.CounterID,
+		RequestID:  req.RequestID,
+		TenantID:   req.TenantID,
+		BranchID:   req.BranchID,
+		TicketID:   ticketID,
+		CounterID:  req.CounterID,
 		OccurredAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -488,10 +608,10 @@ func (h *Handler) handleCompleteTicket(w http.ResponseWriter, r *http.Request, t
 	}
 
 	ticket, _, err := h.store.CompleteTicket(r.Context(), store.TicketActionInput{
-		RequestID: req.RequestID,
-		TenantID:  req.TenantID,
-		BranchID:  req.BranchID,
-		TicketID:  ticketID,
+		RequestID:  req.RequestID,
+		TenantID:   req.TenantID,
+		BranchID:   req.BranchID,
+		TicketID:   ticketID,
 		OccurredAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -509,10 +629,10 @@ func (h *Handler) handleCancelTicket(w http.ResponseWriter, r *http.Request, tic
 	}
 
 	ticket, _, err := h.store.CancelTicket(r.Context(), store.TicketActionInput{
-		RequestID: req.RequestID,
-		TenantID:  req.TenantID,
-		BranchID:  req.BranchID,
-		TicketID:  ticketID,
+		RequestID:  req.RequestID,
+		TenantID:   req.TenantID,
+		BranchID:   req.BranchID,
+		TicketID:   ticketID,
 		OccurredAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -530,10 +650,10 @@ func (h *Handler) handleRecallTicket(w http.ResponseWriter, r *http.Request, tic
 	}
 
 	ticket, _, err := h.store.RecallTicket(r.Context(), store.TicketActionInput{
-		RequestID: req.RequestID,
-		TenantID:  req.TenantID,
-		BranchID:  req.BranchID,
-		TicketID:  ticketID,
+		RequestID:  req.RequestID,
+		TenantID:   req.TenantID,
+		BranchID:   req.BranchID,
+		TicketID:   ticketID,
 		OccurredAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -551,10 +671,10 @@ func (h *Handler) handleHoldTicket(w http.ResponseWriter, r *http.Request, ticke
 	}
 
 	ticket, _, err := h.store.HoldTicket(r.Context(), store.TicketActionInput{
-		RequestID: req.RequestID,
-		TenantID:  req.TenantID,
-		BranchID:  req.BranchID,
-		TicketID:  ticketID,
+		RequestID:  req.RequestID,
+		TenantID:   req.TenantID,
+		BranchID:   req.BranchID,
+		TicketID:   ticketID,
 		OccurredAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -572,10 +692,10 @@ func (h *Handler) handleUnholdTicket(w http.ResponseWriter, r *http.Request, tic
 	}
 
 	ticket, _, err := h.store.UnholdTicket(r.Context(), store.TicketActionInput{
-		RequestID: req.RequestID,
-		TenantID:  req.TenantID,
-		BranchID:  req.BranchID,
-		TicketID:  ticketID,
+		RequestID:  req.RequestID,
+		TenantID:   req.TenantID,
+		BranchID:   req.BranchID,
+		TicketID:   ticketID,
 		OccurredAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -602,12 +722,13 @@ func (h *Handler) handleTransferTicket(w http.ResponseWriter, r *http.Request, t
 	}
 
 	ticket, _, err := h.store.TransferTicket(r.Context(), store.TicketActionInput{
-		RequestID: req.RequestID,
-		TenantID:  req.TenantID,
-		BranchID:  req.BranchID,
-		TicketID:  ticketID,
-		ServiceID: req.ToServiceID,
-		CounterID: req.CounterID,
+		RequestID:  req.RequestID,
+		TenantID:   req.TenantID,
+		BranchID:   req.BranchID,
+		TicketID:   ticketID,
+		ServiceID:  req.ToServiceID,
+		Reason:     strings.TrimSpace(req.Reason),
+		CounterID:  req.CounterID,
 		OccurredAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -625,11 +746,11 @@ func (h *Handler) handleNoShowTicket(w http.ResponseWriter, r *http.Request, tic
 	}
 
 	ticket, _, err := h.store.NoShowTicket(r.Context(), store.TicketActionInput{
-		RequestID: req.RequestID,
-		TenantID:  req.TenantID,
-		BranchID:  req.BranchID,
-		TicketID:  ticketID,
-		OccurredAt: time.Now().UTC(),
+		RequestID:     req.RequestID,
+		TenantID:      req.TenantID,
+		BranchID:      req.BranchID,
+		TicketID:      ticketID,
+		OccurredAt:    time.Now().UTC(),
 		ReturnToQueue: h.noShowReturnToQueue,
 	})
 	if err != nil {
@@ -700,6 +821,10 @@ func mapError(err error) (int, string, string) {
 		return http.StatusConflict, "invalid_state", "ticket state does not allow this action"
 	case errors.Is(err, store.ErrCounterMismatch):
 		return http.StatusConflict, "counter_mismatch", "ticket assigned to different counter"
+	case errors.Is(err, store.ErrCounterNotFound):
+		return http.StatusNotFound, "counter_not_found", "counter not found"
+	case errors.Is(err, store.ErrCounterUnavailable):
+		return http.StatusConflict, "counter_unavailable", "counter unavailable"
 	case errors.Is(err, store.ErrAccessDenied):
 		return http.StatusForbidden, "access_denied", "access denied"
 	case errors.Is(err, store.ErrBranchNotFound):

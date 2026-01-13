@@ -1,21 +1,33 @@
-name: ci
+name: CI
 
 on:
-  push:
   pull_request:
+  push:
+    branches: [main]
 
 jobs:
-  go-test:
+  go-tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [queue-service, auth-service, notification-service, admin-service, analytics-service]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
-      - name: Test
-        run: |
-          cd services/${{ matrix.service }}
-          go test ./...
+          go-version: "1.22"
+      - name: Go test (auth-service)
+        run: go test ./...
+        working-directory: services/auth-service
+      - name: Go test (admin-service)
+        run: go test ./...
+        working-directory: services/admin-service
+      - name: Go test (queue-service)
+        run: go test ./...
+        working-directory: services/queue-service
+      - name: Go test (notification-service)
+        run: go test ./...
+        working-directory: services/notification-service
+      - name: Go test (analytics-service)
+        run: go test ./...
+        working-directory: services/analytics-service
+      - name: Go test (realtime-service)
+        run: go test ./...
+        working-directory: services/realtime-service

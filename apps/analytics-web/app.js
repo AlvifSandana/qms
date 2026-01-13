@@ -15,6 +15,8 @@ const avgService = document.getElementById("avgService");
 const totalCount = document.getElementById("totalCount");
 const queueLength = document.getElementById("queueLength");
 const servingCount = document.getElementById("servingCount");
+const activeCounters = document.getElementById("activeCounters");
+const busyCounters = document.getElementById("busyCounters");
 
 const reportCron = document.getElementById("reportCron");
 const reportChannel = document.getElementById("reportChannel");
@@ -127,6 +129,8 @@ async function refreshRealtime() {
   const data = await api(`/api/analytics/realtime?${search.toString()}`);
   queueLength.textContent = data.queue_length ?? "-";
   servingCount.textContent = data.serving ?? "-";
+  activeCounters.textContent = data.active_counters ?? "-";
+  busyCounters.textContent = data.busy_counters ?? "-";
 }
 
 async function refreshReports() {
@@ -139,7 +143,7 @@ async function refreshReports() {
   renderList(reportList, data, (report) =>
     itemCard(
       `${report.channel} · ${report.cron}`,
-      `${report.recipient} · ${report.report_id}`
+      `${report.recipient} · ${report.report_id} · ${report.last_sent_at || "never"}`
     )
   );
 }

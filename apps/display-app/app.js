@@ -3,6 +3,7 @@ const state = {
   tenantId: "",
   branchId: "",
   serviceId: "",
+  serviceIds: [],
   lastAfter: "",
   audioEnabled: true,
   language: "id",
@@ -36,7 +37,7 @@ const maxCalls = 5;
 let configVersion = 0;
 let lastAudioAt = 0;
 const audioQueue = [];
-let socket = null;
+let sockets = [];
 let pollInterval = null;
 let reconnectDelay = 1000;
 let reconnectTimer = null;
@@ -46,6 +47,7 @@ const playlistItems = [
   "Thank you for waiting",
 ];
 let playlistIndex = 0;
+let playlistSchedule = [];
 
 function setStatus(text) {
   status.textContent = text;
@@ -72,7 +74,7 @@ function renderCalls() {
     row.innerHTML = `
       <div>
         <strong>${call.ticket_number}</strong>
-        <div><span>Counter: ${call.counter_id || "-"}</span></div>
+        <div><span>Counter: ${call.counter_id || "-"} · ${call.service_id || "-"}</span></div>
       </div>
       <span>${new Date(call.called_at || call.created_at).toLocaleTimeString()}</span>
     `;
@@ -159,28 +161,31 @@ function matchFilter(payload) {
   if (state.branchId && payload.branch_id && payload.branch_id !== state.branchId) {
     return false;
   }
-  if (state.serviceId && payload.service_id && payload.service_id !== state.serviceId) {
+  if (state.serviceIds.length > 0 && payload.service_id && !state.serviceIds.includes(payload.service_id)) {
     return false;
   }
   return true;
 }
 
 async function loadSnapshot() {
-  if (!state.tenantId || !state.branchId || !state.serviceId) {
+  if (!state.tenantId || !state.branchId || state.serviceIds.length === 0) {
     return;
   }
-  const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${state.serviceId}`);
-  if (!response.ok) {
-    return;
+  for (const serviceId of state.serviceIds) {
+    const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${serviceId}`);
+    if (!response.ok) {
+      continue;
+    }
+    const tickets = await response.json();
+    const called = tickets.filter((t) => t.status === "called" || t.status === "serving");
+    called.forEach((ticket) => addCall({
+      ticket_id: ticket.ticket_id,
+      ticket_number: ticket.ticket_number,
+      counter_id: ticket.counter_id,
+      called_at: ticket.called_at || ticket.created_at,
+      service_id: ticket.service_id,
+    }));
   }
-  const tickets = await response.json();
-  const called = tickets.filter((t) => t.status === "called" || t.status === "serving");
-  called.forEach((ticket) => addCall({
-    ticket_id: ticket.ticket_id,
-    ticket_number: ticket.ticket_number,
-    counter_id: ticket.counter_id,
-    called_at: ticket.called_at || ticket.created_at,
-  }));
 }
 
 async function pollEvents() {
@@ -206,7 +211,8 @@ function connect() {
   state.queueBase = queueBaseInput.value.trim();
   state.tenantId = tenantInput.value.trim();
   state.branchId = branchInput.value.trim();
-  state.serviceId = serviceInput.value.trim();
+  state.serviceIds = parseServiceIds(serviceInput.value);
+  state.serviceId = state.serviceIds[0] || "";
   state.language = langSelect.value;
   state.audioEnabled = audioToggle.value === "on";
 
@@ -231,41 +237,46 @@ function connectSockJS() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  if (socket) {
-    socket.close();
-  }
+  sockets.forEach((item) => item.close());
+  sockets = [];
   const endpoint = `${state.queueBase}/realtime`;
-  socket = new SockJS(endpoint);
-  socket.onopen = () => {
-    setStatus("Live");
-    connState.value = "Live";
-    setAlert("");
-    sendDeviceStatus("online");
-    reconnectDelay = 1000;
-    const msg = {
-      action: "subscribe",
-      tenant_id: state.tenantId,
-      branch_id: state.branchId,
-      service_id: state.serviceId,
+  if (state.serviceIds.length === 0) {
+    return;
+  }
+  state.serviceIds.forEach((serviceId) => {
+    const socket = new SockJS(endpoint);
+    sockets.push(socket);
+    socket.onopen = () => {
+      setStatus("Live");
+      connState.value = "Live";
+      setAlert("");
+      sendDeviceStatus("online");
+      reconnectDelay = 1000;
+      const msg = {
+        action: "subscribe",
+        tenant_id: state.tenantId,
+        branch_id: state.branchId,
+        service_id: serviceId,
+      };
+      socket.send(JSON.stringify(msg));
     };
-    socket.send(JSON.stringify(msg));
-  };
-  socket.onmessage = (event) => {
-    try {
-      const parsed = JSON.parse(event.data);
-      handleEvent(parsed);
-    } catch (err) {
-      return;
-    }
-  };
-  socket.onclose = () => {
-    setStatus("Disconnected");
-    connState.value = "Disconnected";
-    setAlert("Connection lost. Using fallback polling.");
-    sendDeviceStatus("offline");
-    startPollingFallback();
-    scheduleReconnect();
-  };
+    socket.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        handleEvent(parsed);
+      } catch (err) {
+        return;
+      }
+    };
+    socket.onclose = () => {
+      setStatus("Disconnected");
+      connState.value = "Disconnected";
+      setAlert("Connection lost. Using fallback polling.");
+      sendDeviceStatus("offline");
+      startPollingFallback();
+      scheduleReconnect();
+    };
+  });
 }
 
 function scheduleReconnect() {
@@ -281,10 +292,11 @@ function scheduleReconnect() {
 }
 
 function sendUnsubscribe() {
-  if (!socket || socket.readyState !== SockJS.OPEN) {
-    return;
-  }
-  socket.send(JSON.stringify({ action: "unsubscribe" }));
+  sockets.forEach((socket) => {
+    if (socket && socket.readyState === SockJS.OPEN) {
+      socket.send(JSON.stringify({ action: "unsubscribe" }));
+    }
+  });
 }
 
 function startPollingFallback() {
@@ -314,6 +326,7 @@ function handleEvent(event) {
     counter_id: payload.counter_id,
     called_at: payload.called_at || event.created_at,
     created_at: event.created_at,
+    service_id: payload.service_id,
   });
 }
 
@@ -368,11 +381,26 @@ function applyConfig(payload) {
   }
   if (payload.service_id) {
     serviceInput.value = payload.service_id;
-    state.serviceId = payload.service_id;
+    state.serviceIds = parseServiceIds(payload.service_id);
+    state.serviceId = state.serviceIds[0] || "";
+  }
+  if (Array.isArray(payload.service_ids) && payload.service_ids.length > 0) {
+    serviceInput.value = payload.service_ids.join(", ");
+    state.serviceIds = payload.service_ids.map((id) => String(id).trim()).filter(Boolean);
+    state.serviceId = state.serviceIds[0] || "";
   }
   if (Array.isArray(payload.playlist) && payload.playlist.length > 0) {
     playlistItems.length = 0;
     payload.playlist.forEach((item) => playlistItems.push(String(item)));
+    playlistIndex = 0;
+    updatePlaylist();
+  }
+  if (Array.isArray(payload.playlist_schedule)) {
+    playlistSchedule = payload.playlist_schedule.map((item) => ({
+      start: String(item.start || ""),
+      end: String(item.end || ""),
+      items: Array.isArray(item.items) ? item.items.map((val) => String(val)) : [],
+    }));
     playlistIndex = 0;
     updatePlaylist();
   }
@@ -413,11 +441,50 @@ setInterval(() => {
 }, 10000);
 
 function updatePlaylist() {
-  if (playlistItems.length === 0) {
+  const items = activePlaylistItems();
+  if (items.length === 0) {
     return;
   }
-  playlistEl.textContent = playlistItems[playlistIndex % playlistItems.length];
+  playlistEl.textContent = items[playlistIndex % items.length];
   playlistIndex += 1;
 }
 
 setInterval(updatePlaylist, 8000);
+
+function parseServiceIds(value) {
+  return value
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+}
+
+function activePlaylistItems() {
+  if (playlistSchedule.length === 0) {
+    return playlistItems;
+  }
+  const now = new Date();
+  const current = playlistSchedule.find((slot) => isWithinWindow(slot.start, slot.end, now));
+  if (current && current.items.length > 0) {
+    return current.items;
+  }
+  return playlistItems;
+}
+
+function isWithinWindow(start, end, now) {
+  if (!start || !end) {
+    return false;
+  }
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  if (Number.isNaN(sh) || Number.isNaN(eh)) {
+    return false;
+  }
+  const startTime = new Date(now);
+  startTime.setHours(sh, sm || 0, 0, 0);
+  const endTime = new Date(now);
+  endTime.setHours(eh, em || 0, 0, 0);
+  if (endTime <= startTime) {
+    return now >= startTime || now <= endTime;
+  }
+  return now >= startTime && now <= endTime;
+}

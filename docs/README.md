@@ -8,6 +8,7 @@ Dokumen utama untuk project Omnichannel QMS.
 
 ## Engineering
 - **Specs (Architecture/Contracts)**: `specs.md`
+- **OpenAPI**: `openapi/queue-service.yaml`, `openapi/admin-service.yaml`, `openapi/auth-service.yaml`, `openapi/analytics-service.yaml`, `openapi/realtime-service.yaml`
 - **Project TODO**: `../TODO.md`
 - **AI Agent Rules**: `../AGENT_RULES.md`
 
@@ -30,6 +31,7 @@ Simpan runbook di `docs/RUNBOOKS/`:
 - Backup/Restore Postgres
 - Incident triage (queue lag, notif outage, device offline surge)
 - DR drill checklist
+- Security baseline
 
 ## Diagrams
 Taruh diagram di `docs/diagrams/` (png/svg/mermaid) dan referensikan dari `specs.md`/ADR.
