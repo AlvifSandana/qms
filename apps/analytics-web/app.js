@@ -20,8 +20,16 @@ const reportCron = document.getElementById("reportCron");
 const reportChannel = document.getElementById("reportChannel");
 const reportRecipient = document.getElementById("reportRecipient");
 const reportList = document.getElementById("reportList");
+const previewBtn = document.getElementById("previewReport");
+const clearPreviewBtn = document.getElementById("clearPreview");
+const previewTable = document.getElementById("previewTable");
 
 const anomalyList = document.getElementById("anomalyList");
+const anomalyScope = document.getElementById("anomalyScope");
+const anomalyMin = document.getElementById("anomalyMin");
+const anomalyMax = document.getElementById("anomalyMax");
+const anomalyMeta = document.getElementById("anomalyMeta");
+const refreshAnomaliesBtn = document.getElementById("refreshAnomalies");
 
 let autoTimer = null;
 
@@ -143,12 +151,33 @@ async function refreshAnomalies() {
     return;
   }
   const data = await api(`/api/analytics/anomalies?tenant_id=${tenantId}`);
-  renderList(anomalyList, data, (anomaly) =>
-    itemCard(
-      `${anomaly.type} · ${Math.round(anomaly.value)} > ${Math.round(anomaly.threshold)}`,
+  const params = queryParams();
+  const scoped = anomalyScope.value === "on";
+  const minRatio = Number(anomalyMin.value) || 1;
+  const maxItems = Number(anomalyMax.value) || 20;
+  const filtered = (data || []).filter((anomaly) => {
+    const ratio = anomaly.threshold ? anomaly.value / anomaly.threshold : 0;
+    if (ratio < minRatio) {
+      return false;
+    }
+    if (scoped) {
+      if (params.branchId && anomaly.branch_id !== params.branchId) {
+        return false;
+      }
+      if (params.serviceId && anomaly.service_id !== params.serviceId) {
+        return false;
+      }
+    }
+    return true;
+  }).slice(0, maxItems);
+  anomalyMeta.textContent = `${filtered.length} of ${(data || []).length} anomalies`;
+  renderList(anomalyList, filtered, (anomaly) => {
+    const ratio = anomaly.threshold ? (anomaly.value / anomaly.threshold) : 0;
+    return itemCard(
+      `${anomaly.type} · ${Math.round(anomaly.value)} > ${Math.round(anomaly.threshold)} (${ratio.toFixed(1)}x)`,
       `${anomaly.branch_id} · ${anomaly.service_id}`
-    )
-  );
+    );
+  });
 }
 
 function renderList(target, items, formatter) {
@@ -234,6 +263,72 @@ function exportCsv() {
   window.location.href = `${baseUrl()}/api/analytics/export?${search.toString()}`;
 }
 
+async function previewCsv() {
+  const params = queryParams();
+  if (!params.tenantId || !params.branchId || !params.serviceId) {
+    setAlert("Tenant, branch, and service IDs are required for preview.");
+    return;
+  }
+  const search = new URLSearchParams({
+    tenant_id: params.tenantId,
+    branch_id: params.branchId,
+    service_id: params.serviceId,
+    from: params.from,
+    to: params.to,
+  });
+  const response = await fetch(`${baseUrl()}/api/analytics/export?${search.toString()}`);
+  if (!response.ok) {
+    setAlert("Failed to load preview.");
+    return;
+  }
+  const csv = await response.text();
+  renderPreview(csv);
+}
+
+function clearPreview() {
+  previewTable.innerHTML = "";
+}
+
+function renderPreview(csv) {
+  const rows = parseCsv(csv);
+  if (rows.length === 0) {
+    previewTable.textContent = "No data.";
+    return;
+  }
+  const [header, ...body] = rows;
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  header.forEach((cell) => {
+    const th = document.createElement("th");
+    th.textContent = cell;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  body.slice(0, 50).forEach((row) => {
+    const tr = document.createElement("tr");
+    row.forEach((cell) => {
+      const td = document.createElement("td");
+      td.textContent = cell;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  previewTable.innerHTML = "";
+  previewTable.appendChild(table);
+}
+
+function parseCsv(csv) {
+  if (!csv) {
+    return [];
+  }
+  return csv.trim().split("\n").map((line) => line.split(","));
+}
+
 function toggleAutoRefresh() {
   if (autoTimer) {
     clearInterval(autoTimer);
@@ -268,6 +363,18 @@ document.querySelectorAll("[data-range]").forEach((btn) => {
 
 document.getElementById("createReport").addEventListener("click", () => {
   createReport().catch(() => {});
+});
+
+previewBtn.addEventListener("click", () => {
+  previewCsv().catch(() => {});
+});
+
+clearPreviewBtn.addEventListener("click", () => {
+  clearPreview();
+});
+
+refreshAnomaliesBtn.addEventListener("click", () => {
+  refreshAnomalies().catch(() => {});
 });
 
 setRange(24);

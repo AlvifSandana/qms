@@ -193,6 +193,41 @@ button.ghost {
   background: rgba(255, 255, 255, 0.6);
 }
 
+.table-wrap {
+  margin-top: 12px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fff;
+  max-height: 280px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead {
+  background: #0b1220;
+  color: #fff;
+  position: sticky;
+  top: 0;
+}
+
+th,
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
 .item {
   display: flex;
   justify-content: space-between;

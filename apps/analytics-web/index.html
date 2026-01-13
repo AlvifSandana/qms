@@ -117,9 +117,33 @@
           <button id="createReport">Create Report</button>
         </div>
         <div class="list" id="reportList"></div>
+        <div class="grid">
+          <button id="previewReport">Load Preview</button>
+          <button id="clearPreview" class="ghost">Clear Preview</button>
+        </div>
+        <div class="table-wrap" id="previewTable"></div>
       </div>
       <div>
         <h2>Anomalies</h2>
+        <div class="grid">
+          <label>
+            Scope Only
+            <select id="anomalyScope">
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <label>
+            Min Severity (x)
+            <input id="anomalyMin" type="number" min="1" step="0.1" value="1.0" />
+          </label>
+          <label>
+            Max Items
+            <input id="anomalyMax" type="number" min="5" step="5" value="20" />
+          </label>
+          <button id="refreshAnomalies">Apply Filter</button>
+        </div>
+        <div class="meta" id="anomalyMeta">No data.</div>
         <div class="list" id="anomalyList"></div>
       </div>
     </section>
