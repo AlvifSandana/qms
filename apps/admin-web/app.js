@@ -57,6 +57,7 @@ const targetUserId = document.getElementById("targetUserId");
 const userDetail = document.getElementById("userDetail");
 const userQuery = document.getElementById("userQuery");
 const userLimit = document.getElementById("userLimit");
+const userPage = document.getElementById("userPage");
 const userList = document.getElementById("userList");
 const accessBranches = document.getElementById("accessBranches");
 const accessServices = document.getElementById("accessServices");
@@ -80,6 +81,8 @@ document.getElementById("loadUser").addEventListener("click", loadUserDetail);
 document.getElementById("clearUser").addEventListener("click", clearUserDetail);
 document.getElementById("searchUsers").addEventListener("click", searchUsers);
 document.getElementById("loadAccess").addEventListener("click", loadUserAccess);
+document.getElementById("prevPage").addEventListener("click", () => changePage(-1));
+document.getElementById("nextPage").addEventListener("click", () => changePage(1));
 
 function headers() {
   return {
@@ -630,10 +633,12 @@ async function searchUsers() {
   }
   const query = userQuery.value.trim();
   const limit = Number(userLimit.value) || 25;
+  const page = Number(userPage.value) || 1;
   const params = new URLSearchParams({
     tenant_id: tenantId,
     query,
     limit: String(limit),
+    page: String(page),
   });
   const data = await api(`/api/admin/users?${params.toString()}`);
   renderList(userList, data, (user) =>
@@ -650,6 +655,13 @@ async function searchUsers() {
 async function loadUserDetailFrom(userId) {
   targetUserId.value = userId;
   await loadUserDetail();
+}
+
+function changePage(delta) {
+  const current = Number(userPage.value) || 1;
+  const next = Math.max(1, current + delta);
+  userPage.value = String(next);
+  searchUsers().catch(() => {});
 }
 
 async function loadUserAccess() {

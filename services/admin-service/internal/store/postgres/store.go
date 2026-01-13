@@ -457,9 +457,12 @@ func (s *Store) GetUser(ctx context.Context, tenantID, userID string) (models.Us
 	return user, true, nil
 }
 
-func (s *Store) ListUsers(ctx context.Context, tenantID, query string, limit int) ([]models.UserDetail, error) {
+func (s *Store) ListUsers(ctx context.Context, tenantID, query string, limit, offset int) ([]models.UserDetail, error) {
 	if limit <= 0 {
 		limit = 25
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	args := []interface{}{tenantID}
 	filter := ""
@@ -467,14 +470,16 @@ func (s *Store) ListUsers(ctx context.Context, tenantID, query string, limit int
 		filter = " AND (u.email ILIKE $2 OR u.user_id::text ILIKE $2)"
 		args = append(args, "%"+query+"%")
 	}
-	args = append(args, limit)
+	args = append(args, limit, offset)
+	limitPos := len(args) - 1
+	offsetPos := len(args)
 	rows, err := s.pool.Query(ctx, `
 		SELECT u.user_id, u.tenant_id, u.email, u.role_id, r.name, u.active, u.created_at
 		FROM users u
 		JOIN roles r ON r.role_id = u.role_id
 		WHERE u.tenant_id = $1`+filter+`
 		ORDER BY u.created_at DESC
-		LIMIT $`+strconv.Itoa(len(args))+`
+		LIMIT $`+strconv.Itoa(limitPos)+` OFFSET $`+strconv.Itoa(offsetPos)+`
 	`, args...)
 	if err != nil {
 		return nil, err

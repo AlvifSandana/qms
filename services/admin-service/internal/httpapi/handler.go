@@ -739,17 +739,25 @@ func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 	query := strings.TrimSpace(r.URL.Query().Get("query"))
 	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	pageRaw := strings.TrimSpace(r.URL.Query().Get("page"))
 	limit := 25
 	if limitRaw != "" {
 		if parsed, err := strconv.Atoi(limitRaw); err == nil && parsed > 0 {
 			limit = parsed
 		}
 	}
+	page := 1
+	if pageRaw != "" {
+		if parsed, err := strconv.Atoi(pageRaw); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	offset := (page - 1) * limit
 	if !isValidUUID(tenantID) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
 		return
 	}
-	users, err := h.store.ListUsers(r.Context(), tenantID, query, limit)
+	users, err := h.store.ListUsers(r.Context(), tenantID, query, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
