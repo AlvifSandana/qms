@@ -75,6 +75,16 @@ type UserDetail struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type UserAccess struct {
+	Branches []UserAccessItem `json:"branches"`
+	Services []UserAccessItem `json:"services"`
+}
+
+type UserAccessItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type Holiday struct {
 	HolidayID string `json:"holiday_id"`
 	TenantID  string `json:"tenant_id"`

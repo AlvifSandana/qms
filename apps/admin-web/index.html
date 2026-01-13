@@ -244,6 +244,24 @@
           <button id="clearUser" class="ghost">Clear</button>
         </div>
         <pre class="mono" id="userDetail">No user loaded.</pre>
+        <div class="grid">
+          <label>
+            Search
+            <input id="userQuery" placeholder="email or user id" />
+          </label>
+          <label>
+            Limit
+            <input id="userLimit" type="number" min="5" value="25" />
+          </label>
+          <button id="searchUsers">Search Users</button>
+        </div>
+        <div class="list" id="userList"></div>
+        <h3 class="subhead">Access Scope</h3>
+        <div class="grid">
+          <button id="loadAccess">Load Access</button>
+        </div>
+        <div class="list" id="accessBranches"></div>
+        <div class="list" id="accessServices"></div>
       </div>
     </section>
 

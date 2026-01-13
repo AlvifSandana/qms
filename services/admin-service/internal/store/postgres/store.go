@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"qms/admin-service/internal/models"
 	"qms/admin-service/internal/store"
@@ -454,6 +455,95 @@ func (s *Store) GetUser(ctx context.Context, tenantID, userID string) (models.Us
 		return models.UserDetail{}, false, err
 	}
 	return user, true, nil
+}
+
+func (s *Store) ListUsers(ctx context.Context, tenantID, query string, limit int) ([]models.UserDetail, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+	args := []interface{}{tenantID}
+	filter := ""
+	if query != "" {
+		filter = " AND (u.email ILIKE $2 OR u.user_id::text ILIKE $2)"
+		args = append(args, "%"+query+"%")
+	}
+	args = append(args, limit)
+	rows, err := s.pool.Query(ctx, `
+		SELECT u.user_id, u.tenant_id, u.email, u.role_id, r.name, u.active, u.created_at
+		FROM users u
+		JOIN roles r ON r.role_id = u.role_id
+		WHERE u.tenant_id = $1`+filter+`
+		ORDER BY u.created_at DESC
+		LIMIT $`+strconv.Itoa(len(args))+`
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []models.UserDetail
+	for rows.Next() {
+		var user models.UserDetail
+		if err := rows.Scan(&user.UserID, &user.TenantID, &user.Email, &user.RoleID, &user.RoleName, &user.Active, &user.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+func (s *Store) GetUserAccess(ctx context.Context, tenantID, userID string) (models.UserAccess, error) {
+	var access models.UserAccess
+
+	branchRows, err := s.pool.Query(ctx, `
+		SELECT b.branch_id, b.name
+		FROM user_branch_access uba
+		JOIN branches b ON b.branch_id = uba.branch_id
+		WHERE uba.user_id = $1 AND b.tenant_id = $2
+		ORDER BY b.name ASC
+	`, userID, tenantID)
+	if err != nil {
+		return models.UserAccess{}, err
+	}
+	defer branchRows.Close()
+	for branchRows.Next() {
+		var item models.UserAccessItem
+		if err := branchRows.Scan(&item.ID, &item.Name); err != nil {
+			return models.UserAccess{}, err
+		}
+		access.Branches = append(access.Branches, item)
+	}
+	if err := branchRows.Err(); err != nil {
+		return models.UserAccess{}, err
+	}
+
+	serviceRows, err := s.pool.Query(ctx, `
+		SELECT s.service_id, s.name
+		FROM user_service_access usa
+		JOIN services s ON s.service_id = usa.service_id
+		JOIN branches b ON b.branch_id = s.branch_id
+		WHERE usa.user_id = $1 AND b.tenant_id = $2
+		ORDER BY s.name ASC
+	`, userID, tenantID)
+	if err != nil {
+		return models.UserAccess{}, err
+	}
+	defer serviceRows.Close()
+	for serviceRows.Next() {
+		var item models.UserAccessItem
+		if err := serviceRows.Scan(&item.ID, &item.Name); err != nil {
+			return models.UserAccess{}, err
+		}
+		access.Services = append(access.Services, item)
+	}
+	if err := serviceRows.Err(); err != nil {
+		return models.UserAccess{}, err
+	}
+
+	return access, nil
 }
 
 func (s *Store) CreateHoliday(ctx context.Context, holiday models.Holiday) (models.Holiday, error) {

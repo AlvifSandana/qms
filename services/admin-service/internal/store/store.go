@@ -39,6 +39,8 @@ type Store interface {
 	ListRoles(ctx context.Context, tenantID string) ([]models.Role, error)
 	UpdateUserRole(ctx context.Context, tenantID, userID, roleID string) error
 	GetUser(ctx context.Context, tenantID, userID string) (models.UserDetail, bool, error)
+	ListUsers(ctx context.Context, tenantID, query string, limit int) ([]models.UserDetail, error)
+	GetUserAccess(ctx context.Context, tenantID, userID string) (models.UserAccess, error)
 
 	CreateHoliday(ctx context.Context, holiday models.Holiday) (models.Holiday, error)
 	ListHolidays(ctx context.Context, tenantID, branchID string) ([]models.Holiday, error)

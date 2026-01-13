@@ -194,6 +194,11 @@ button:hover {
   overflow: auto;
 }
 
+.subhead {
+  margin-top: 16px;
+  font-size: 16px;
+}
+
 @media (max-width: 720px) {
   .header {
     flex-direction: column;

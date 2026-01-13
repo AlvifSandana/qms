@@ -55,6 +55,11 @@ const roleList = document.getElementById("roleList");
 const roleAssign = document.getElementById("roleAssign");
 const targetUserId = document.getElementById("targetUserId");
 const userDetail = document.getElementById("userDetail");
+const userQuery = document.getElementById("userQuery");
+const userLimit = document.getElementById("userLimit");
+const userList = document.getElementById("userList");
+const accessBranches = document.getElementById("accessBranches");
+const accessServices = document.getElementById("accessServices");
 
 document.getElementById("refreshAll").addEventListener("click", refreshAll);
 document.getElementById("createBranch").addEventListener("click", onCreateBranch);
@@ -73,6 +78,8 @@ document.getElementById("assignRole").addEventListener("click", onAssignRole);
 document.getElementById("saveApprovalPref").addEventListener("click", onSaveApprovalPref);
 document.getElementById("loadUser").addEventListener("click", loadUserDetail);
 document.getElementById("clearUser").addEventListener("click", clearUserDetail);
+document.getElementById("searchUsers").addEventListener("click", searchUsers);
+document.getElementById("loadAccess").addEventListener("click", loadUserAccess);
 
 function headers() {
   return {
@@ -452,8 +459,9 @@ async function loadAudit() {
   const params = new URLSearchParams({
     tenant_id: tenantId,
   });
-  if (auditAction.value.trim()) {
-    params.append("action_type", auditAction.value.trim());
+  const action = auditAction.value.trim();
+  if (action) {
+    params.append("action_type", action);
   }
   if (auditUser.value.trim()) {
     params.append("user_id", auditUser.value.trim());
@@ -612,6 +620,53 @@ async function onAssignRole() {
   });
   setHint("Role assigned.");
   loadUserDetail().catch(() => {});
+}
+
+async function searchUsers() {
+  const tenantId = tenantIdInput.value.trim();
+  if (!tenantId) {
+    userList.textContent = "Tenant ID required.";
+    return;
+  }
+  const query = userQuery.value.trim();
+  const limit = Number(userLimit.value) || 25;
+  const params = new URLSearchParams({
+    tenant_id: tenantId,
+    query,
+    limit: String(limit),
+  });
+  const data = await api(`/api/admin/users?${params.toString()}`);
+  renderList(userList, data, (user) =>
+    itemCardActions(
+      `${user.email} · ${user.role_name}`,
+      `${user.user_id}`,
+      [
+        { label: "Load", onClick: () => loadUserDetailFrom(user.user_id) },
+      ]
+    )
+  );
+}
+
+async function loadUserDetailFrom(userId) {
+  targetUserId.value = userId;
+  await loadUserDetail();
+}
+
+async function loadUserAccess() {
+  const tenantId = tenantIdInput.value.trim();
+  const userId = targetUserId.value.trim();
+  if (!tenantId || !userId) {
+    accessBranches.textContent = "Tenant ID and user ID required.";
+    accessServices.textContent = "";
+    return;
+  }
+  const data = await api(`/api/admin/users/${userId}/access?tenant_id=${tenantId}`);
+  renderList(accessBranches, data.branches, (item) =>
+    itemCard(item.name, item.id, null, null)
+  );
+  renderList(accessServices, data.services, (item) =>
+    itemCard(item.name, item.id, null, null)
+  );
 }
 
 refreshAll().catch((err) => setHint(err.message));

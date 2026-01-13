@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"qms/admin-service/internal/models"
@@ -48,6 +49,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/admin/audit", h.handleAudit)
 	mux.HandleFunc("/api/admin/roles", h.handleRoles)
 	mux.HandleFunc("/api/admin/users/", h.handleUserRole)
+	mux.HandleFunc("/api/admin/users", h.handleUsers)
 	mux.HandleFunc("/api/admin/holidays", h.handleHolidays)
 	mux.HandleFunc("/api/admin/approvals", h.handleApprovals)
 	mux.HandleFunc("/api/admin/approvals/prefs", h.handleApprovalPrefs)
@@ -681,6 +683,24 @@ func (h *Handler) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, user)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "access" {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+		if !isValidUUID(tenantID) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		access, err := h.store.GetUserAccess(r.Context(), tenantID, userID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(w, http.StatusOK, access)
+		return
+	}
 	if len(parts) != 2 || parts[1] != "role" {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -706,6 +726,35 @@ func (h *Handler) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 	h.recordAudit(r, payload.TenantID, "user.role_update", "user", userID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
+	if !requirePermission(w, r, permissionRolesManage) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	limit := 25
+	if limitRaw != "" {
+		if parsed, err := strconv.Atoi(limitRaw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	if !isValidUUID(tenantID) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+		return
+	}
+	users, err := h.store.ListUsers(r.Context(), tenantID, query, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, users)
 }
 
 func (h *Handler) handleHolidays(w http.ResponseWriter, r *http.Request) {
