@@ -29,6 +29,8 @@ const startBtn = document.getElementById("startBtn");
 const completeBtn = document.getElementById("completeBtn");
 const holdBtn = document.getElementById("holdBtn");
 const unholdBtn = document.getElementById("unholdBtn");
+const noShowBtn = document.getElementById("noShowBtn");
+const cancelBtn = document.getElementById("cancelBtn");
 const transferBtn = document.getElementById("transferBtn");
 const transferSelect = document.getElementById("transferService");
 let socket = null;
@@ -268,6 +270,11 @@ function renderActive(ticket) {
     recallBtn.disabled = true;
     startBtn.disabled = true;
     completeBtn.disabled = true;
+    holdBtn.disabled = true;
+    unholdBtn.disabled = true;
+    noShowBtn.disabled = true;
+    cancelBtn.disabled = true;
+    transferBtn.disabled = true;
     return;
   }
   activeTicket.classList.remove("empty");
@@ -285,6 +292,8 @@ function renderActive(ticket) {
   completeBtn.disabled = ticket.status !== "serving";
   holdBtn.disabled = ticket.status !== "waiting" && ticket.status !== "called";
   unholdBtn.disabled = ticket.status !== "held";
+  noShowBtn.disabled = ticket.status !== "called";
+  cancelBtn.disabled = ticket.status !== "waiting";
   transferBtn.disabled = ticket.status !== "waiting" && ticket.status !== "called" && ticket.status !== "serving";
 }
 
@@ -456,6 +465,14 @@ holdBtn.addEventListener("click", () => {
 
 unholdBtn.addEventListener("click", () => {
   performAction("unhold").catch(() => setStatus("Unhold failed"));
+});
+
+noShowBtn.addEventListener("click", () => {
+  performAction("no-show").catch(() => setStatus("No-show failed"));
+});
+
+cancelBtn.addEventListener("click", () => {
+  performAction("cancel").catch(() => setStatus("Cancel failed"));
 });
 
 transferBtn.addEventListener("click", () => {

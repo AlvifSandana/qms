@@ -91,6 +91,11 @@ button {
   cursor: pointer;
 }
 
+button.danger {
+  background: #ef4444;
+  color: #fff;
+}
+
 button:hover {
   filter: brightness(1.05);
 }

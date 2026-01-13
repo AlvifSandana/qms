@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QMS Public Queue</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Virtual Queue</p>
+        <h1>Join the line, skip the wait.</h1>
+        <p class="subtitle">Get a ticket remotely and track your call in real time.</p>
+      </div>
+      <div class="badge" id="status">Ready</div>
+    </header>
+
+    <section class="card">
+      <h2>Queue Setup</h2>
+      <div class="grid">
+        <label>
+          Queue Base URL
+          <input id="queueBase" value="http://localhost:8080" />
+        </label>
+        <label>
+          Tenant ID
+          <input id="tenantId" placeholder="UUID" />
+        </label>
+        <label>
+          Branch ID
+          <input id="branchId" placeholder="UUID" />
+        </label>
+        <label>
+          Service
+          <select id="serviceSelect"></select>
+        </label>
+        <button id="loadServices">Load Services</button>
+      </div>
+      <p class="hint" id="setupHint"></p>
+    </section>
+
+    <section class="card split">
+      <div>
+        <h2>Join Queue</h2>
+        <div class="grid">
+          <label>
+            Phone (optional)
+            <input id="phoneInput" placeholder="08xxxxxxxxxx" />
+          </label>
+          <button id="joinQueue">Get Ticket</button>
+        </div>
+        <div class="ticket" id="ticketCard">
+          <p class="hint">No active ticket yet.</p>
+        </div>
+      </div>
+      <div>
+        <h2>Track Ticket</h2>
+        <div class="grid">
+          <label>
+            Ticket ID
+            <input id="trackTicketId" placeholder="UUID" />
+          </label>
+          <button id="trackBtn">Track</button>
+        </div>
+        <div class="timeline" id="timeline">
+          <p class="hint">No updates yet.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
