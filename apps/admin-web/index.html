@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QMS Admin Console</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <p class="eyebrow">QMS Admin</p>
+        <h1>Operations Console</h1>
+        <p class="subtitle">Configure branches, services, devices, policies, and approvals.</p>
+      </div>
+      <div class="status" id="status">Idle</div>
+    </header>
+
+    <section class="card">
+      <h2>Session Context</h2>
+      <div class="grid">
+        <label>
+          Admin Base URL
+          <input id="adminBase" value="http://localhost:8083" />
+        </label>
+        <label>
+          Tenant ID
+          <input id="tenantId" placeholder="UUID" />
+        </label>
+        <label>
+          Role (X-Role)
+          <select id="role">
+            <option value="admin">admin</option>
+            <option value="supervisor">supervisor</option>
+            <option value="agent">agent</option>
+          </select>
+        </label>
+        <label>
+          User ID (X-User-ID)
+          <input id="userId" placeholder="UUID" />
+        </label>
+        <button id="refreshAll">Refresh All</button>
+      </div>
+      <p class="hint" id="sessionHint"></p>
+    </section>
+
+    <section class="card split">
+      <div>
+        <h2>Branches</h2>
+        <div class="grid">
+          <label>
+            New Branch Name
+            <input id="branchName" placeholder="Jakarta HQ" />
+          </label>
+          <button id="createBranch">Create Branch</button>
+        </div>
+        <div class="list" id="branchList"></div>
+      </div>
+      <div>
+        <h2>Services</h2>
+        <div class="grid">
+          <label>
+            Branch ID
+            <input id="serviceBranchId" placeholder="UUID" />
+          </label>
+          <label>
+            Service Name
+            <input id="serviceName" placeholder="Customer Service" />
+          </label>
+          <label>
+            Code
+            <input id="serviceCode" placeholder="CS" />
+          </label>
+          <label>
+            SLA Minutes
+            <input id="serviceSla" type="number" min="1" value="5" />
+          </label>
+          <button id="createService">Create Service</button>
+        </div>
+        <div class="list" id="serviceList"></div>
+      </div>
+    </section>
+
+    <section class="card split">
+      <div>
+        <h2>Counters</h2>
+        <div class="grid">
+          <label>
+            Branch ID
+            <input id="counterBranchId" placeholder="UUID" />
+          </label>
+          <label>
+            Counter Name
+            <input id="counterName" placeholder="Counter 1" />
+          </label>
+          <button id="createCounter">Create Counter</button>
+        </div>
+        <div class="grid">
+          <label>
+            Counter ID
+            <input id="mapCounterId" placeholder="UUID" />
+          </label>
+          <label>
+            Service ID
+            <input id="mapServiceId" placeholder="UUID" />
+          </label>
+          <button id="mapCounter">Map Service</button>
+        </div>
+        <div class="list" id="counterList"></div>
+      </div>
+      <div>
+        <h2>Policies</h2>
+        <div class="grid">
+          <label>
+            Branch ID
+            <input id="policyBranchId" placeholder="UUID" />
+          </label>
+          <label>
+            Service ID
+            <input id="policyServiceId" placeholder="UUID" />
+          </label>
+          <label>
+            No-Show Grace (sec)
+            <input id="policyGrace" type="number" min="60" value="300" />
+          </label>
+          <label>
+            Return to Queue
+            <select id="policyReturn">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <button id="savePolicy">Save Policy</button>
+        </div>
+        <div class="list" id="policyView"></div>
+      </div>
+    </section>
+
+    <section class="card split">
+      <div>
+        <h2>Devices</h2>
+        <div class="grid">
+          <label>
+            Branch ID
+            <input id="deviceBranchId" placeholder="UUID" />
+          </label>
+          <label>
+            Device Type
+            <select id="deviceType">
+              <option value="kiosk">kiosk</option>
+              <option value="display">display</option>
+            </select>
+          </label>
+          <label>
+            Area ID (optional)
+            <input id="deviceAreaId" placeholder="UUID" />
+          </label>
+          <button id="registerDevice">Register Device</button>
+        </div>
+        <div class="list" id="deviceList"></div>
+      </div>
+      <div>
+        <h2>Holidays</h2>
+        <div class="grid">
+          <label>
+            Branch ID
+            <input id="holidayBranchId" placeholder="UUID" />
+          </label>
+          <label>
+            Date
+            <input id="holidayDate" type="date" />
+          </label>
+          <label>
+            Name
+            <input id="holidayName" placeholder="Idul Fitri" />
+          </label>
+          <button id="createHoliday">Add Holiday</button>
+        </div>
+        <div class="list" id="holidayList"></div>
+      </div>
+    </section>
+
+    <section class="card split">
+      <div>
+        <h2>Approvals</h2>
+        <div class="grid">
+          <label>
+            Status
+            <select id="approvalStatus">
+              <option value="">all</option>
+              <option value="pending">pending</option>
+              <option value="approved">approved</option>
+            </select>
+          </label>
+          <button id="refreshApprovals">Refresh</button>
+        </div>
+        <div class="list" id="approvalList"></div>
+      </div>
+      <div>
+        <h2>Audit Log</h2>
+        <div class="grid">
+          <label>
+            Action Type
+            <input id="auditAction" placeholder="branch.create" />
+          </label>
+          <label>
+            User ID
+            <input id="auditUser" placeholder="UUID" />
+          </label>
+          <button id="refreshAudit">Refresh</button>
+        </div>
+        <div class="list" id="auditList"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
