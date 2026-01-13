@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/csv"
 	"encoding/json"
+	"expvar"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,6 +16,11 @@ import (
 
 type Handler struct {
 	store store.Store
+	opts  Options
+}
+
+type Options struct {
+	BIAPIToken string
 }
 
 type errorResponse struct {
@@ -26,18 +32,30 @@ type responseError struct {
 	Message string `json:"message"`
 }
 
-func NewHandler(store store.Store) *Handler {
-	return &Handler{store: store}
+func NewHandler(store store.Store, opts Options) *Handler {
+	return &Handler{store: store, opts: opts}
 }
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", expvar.Handler())
+	mux.HandleFunc("/healthz", h.handleHealth)
 	mux.HandleFunc("/api/analytics/kpis", h.handleKPIs)
 	mux.HandleFunc("/api/analytics/realtime", h.handleRealtime)
 	mux.HandleFunc("/api/analytics/export", h.handleExport)
 	mux.HandleFunc("/api/analytics/reports", h.handleReports)
 	mux.HandleFunc("/api/analytics/anomalies", h.handleAnomalies)
+	mux.HandleFunc("/api/analytics/bi/tickets", h.handleBITickets)
+	mux.HandleFunc("/api/analytics/telemetry", h.handleTelemetry)
 	return mux
+}
+
+func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) handleKPIs(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +187,60 @@ func (h *Handler) handleAnomalies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, anomalies)
+}
+
+func (h *Handler) handleBITickets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	token := h.opts.BIAPIToken
+	if token == "" {
+		writeError(w, http.StatusForbidden, "bi_disabled", "BI connector is disabled")
+		return
+	}
+	if !hasBIToken(r, token) {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid token")
+		return
+	}
+	params, ok := parseParams(w, r)
+	if !ok {
+		return
+	}
+	tickets, err := h.store.ListTickets(r.Context(), params.tenantID, params.branchID, params.serviceID, params.from, params.to)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, tickets)
+}
+
+func (h *Handler) handleTelemetry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var payload map[string]interface{}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+		return
+	}
+	_ = payload
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func hasBIToken(r *http.Request, token string) bool {
+	header := strings.TrimSpace(r.Header.Get("X-BI-Token"))
+	if header == token {
+		return true
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer ")) == token
+	}
+	return false
 }
 
 type queryParams struct {

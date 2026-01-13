@@ -5,6 +5,12 @@ info:
 servers:
   - url: http://localhost:8085
 paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
   /realtime/info:
     get:
       summary: SockJS info endpoint

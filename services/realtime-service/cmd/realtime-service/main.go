@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"expvar"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,13 +14,15 @@ import (
 	"time"
 
 	"qms/realtime-service/internal/config"
-	"qms/realtime-service/internal/hub"
 	"qms/realtime-service/internal/httpapi"
+	"qms/realtime-service/internal/hub"
 	"qms/realtime-service/internal/store/postgres"
+	"qms/realtime-service/internal/telemetry"
 
 	"github.com/google/uuid"
 	"github.com/igm/sockjs-go/sockjs"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type eventEnvelope struct {
@@ -30,6 +33,12 @@ type eventEnvelope struct {
 
 func main() {
 	cfg := config.Load()
+	shutdownTelemetry := telemetry.Setup("realtime-service")
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTelemetry(ctx)
+	}()
 
 	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
@@ -45,6 +54,14 @@ func main() {
 	})
 
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", expvar.Handler())
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 	sockjsHandler := sockjs.NewHandler("/realtime", sockjs.DefaultOptions, func(session sockjs.Session) {
 		client := &hub.Client{ID: uuid.NewString(), Send: make(chan []byte, 16)}
 		h.Register(client)
@@ -74,9 +91,10 @@ func main() {
 	})
 	mux.Handle("/realtime/", sockjsHandler)
 
+	otelHandler := otelhttp.NewHandler(httpapi.LoggingMiddleware(limiter.Middleware(mux)), "realtime-service")
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      httpapi.LoggingMiddleware(limiter.Middleware(mux)),
+		Handler:      otelHandler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

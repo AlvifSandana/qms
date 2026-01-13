@@ -17,6 +17,13 @@ type Config struct {
 	ReportIntervalSeconds    int
 	ReportWebhookURL         string
 	ReportWebhookToken       string
+	ReportEmailHost          string
+	ReportEmailPort          int
+	ReportEmailUser          string
+	ReportEmailPass          string
+	ReportEmailFrom          string
+	ReportEmailSubject       string
+	BIAPIToken               string
 }
 
 func Load() Config {
@@ -37,6 +44,13 @@ func Load() Config {
 		ReportIntervalSeconds:    readInt("ANALYTICS_REPORT_INTERVAL_SECONDS", 300),
 		ReportWebhookURL:         os.Getenv("ANALYTICS_REPORT_WEBHOOK_URL"),
 		ReportWebhookToken:       os.Getenv("ANALYTICS_REPORT_WEBHOOK_TOKEN"),
+		ReportEmailHost:          os.Getenv("ANALYTICS_REPORT_EMAIL_HOST"),
+		ReportEmailPort:          readInt("ANALYTICS_REPORT_EMAIL_PORT", 587),
+		ReportEmailUser:          os.Getenv("ANALYTICS_REPORT_EMAIL_USER"),
+		ReportEmailPass:          os.Getenv("ANALYTICS_REPORT_EMAIL_PASS"),
+		ReportEmailFrom:          os.Getenv("ANALYTICS_REPORT_EMAIL_FROM"),
+		ReportEmailSubject:       os.Getenv("ANALYTICS_REPORT_EMAIL_SUBJECT"),
+		BIAPIToken:               os.Getenv("ANALYTICS_BI_API_TOKEN"),
 	}
 }
 

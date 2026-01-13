@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
+	"expvar"
 	"net/http"
 	"os"
 	"strings"
@@ -25,6 +28,11 @@ type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	BranchID string `json:"branch_id"`
+}
+
+type samlRequest struct {
+	TenantID  string `json:"tenant_id"`
+	Assertion string `json:"assertion"`
 }
 
 type loginResponse struct {
@@ -57,11 +65,22 @@ func NewHandler(store store.Store) *Handler {
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", expvar.Handler())
+	mux.HandleFunc("/healthz", h.handleHealth)
 	mux.HandleFunc("/api/auth/login", h.handleLogin)
 	mux.HandleFunc("/api/auth/sso", h.handleSSO)
 	mux.HandleFunc("/api/auth/sso/jwt", h.handleJWTSSO)
+	mux.HandleFunc("/api/auth/sso/saml", h.handleSAMLSSO)
 	mux.HandleFunc("/api/auth/me", h.handleMe)
 	return mux
+}
+
+func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -242,6 +261,67 @@ func (h *Handler) handleJWTSSO(w http.ResponseWriter, r *http.Request) {
 		Services: result.Services,
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) handleSAMLSSO(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req samlRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+		return
+	}
+
+	req.TenantID = strings.TrimSpace(req.TenantID)
+	req.Assertion = strings.TrimSpace(req.Assertion)
+	if !isValidUUID(req.TenantID) || req.Assertion == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id and assertion are required")
+		return
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(req.Assertion)
+	if err != nil {
+		decoded = []byte(req.Assertion)
+	}
+
+	nameID, err := extractSAMLNameID(decoded)
+	if err != nil || nameID == "" {
+		writeError(w, http.StatusUnauthorized, "invalid_assertion", "invalid SAML assertion")
+		return
+	}
+
+	result, err := h.store.SSOLogin(r.Context(), req.TenantID, "saml", nameID, nameID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid SSO credentials")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func extractSAMLNameID(data []byte) (string, error) {
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return "", err
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(start.Name.Local, "NameID") {
+			var value string
+			if err := decoder.DecodeElement(&value, &start); err != nil {
+				return "", err
+			}
+			return strings.TrimSpace(value), nil
+		}
+	}
 }
 
 func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {

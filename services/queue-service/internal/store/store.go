@@ -43,6 +43,8 @@ type TicketActionInput struct {
 
 type TicketStore interface {
 	CreateTicket(ctx context.Context, input CreateTicketInput) (models.Ticket, bool, error)
+	GetTicket(ctx context.Context, tenantID, branchID, ticketID string) (models.Ticket, bool, error)
+	ListQueue(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error)
 	CallNext(ctx context.Context, input CallNextInput) (models.Ticket, bool, error)
 	StartServing(ctx context.Context, input TicketActionInput) (models.Ticket, bool, error)
 	CompleteTicket(ctx context.Context, input TicketActionInput) (models.Ticket, bool, error)

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/smtp"
 	"os"
 	"os/signal"
 	"strings"
@@ -19,12 +20,20 @@ import (
 	"qms/analytics-service/internal/httpapi"
 	"qms/analytics-service/internal/store"
 	"qms/analytics-service/internal/store/postgres"
+	"qms/analytics-service/internal/telemetry"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
 	cfg := config.Load()
+	shutdownTelemetry := telemetry.Setup("analytics-service")
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTelemetry(ctx)
+	}()
 
 	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
@@ -33,7 +42,7 @@ func main() {
 	defer pool.Close()
 
 	repo := postgres.NewStore(pool)
-	handler := httpapi.NewHandler(repo)
+	handler := httpapi.NewHandler(repo, httpapi.Options{BIAPIToken: cfg.BIAPIToken})
 	limiter := httpapi.NewRateLimiter(httpapi.RateLimitConfig{
 		IPPerMinute:     cfg.RateLimitPerMinute,
 		IPBurst:         cfg.RateLimitBurst,
@@ -41,9 +50,10 @@ func main() {
 		TenantBurst:     cfg.TenantRateLimitBurst,
 	})
 
+	otelHandler := otelhttp.NewHandler(httpapi.LoggingMiddleware(limiter.Middleware(handler.Routes())), "analytics-service")
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      httpapi.LoggingMiddleware(limiter.Middleware(handler.Routes())),
+		Handler:      otelHandler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -193,6 +203,16 @@ func buildCSV(rows []store.TicketRow) ([]byte, error) {
 }
 
 func sendReport(cfg config.Config, report store.ScheduledReport, from, to time.Time, csvData []byte) error {
+	if strings.EqualFold(report.Channel, "email") {
+		return sendReportEmail(cfg, report, from, to, csvData)
+	}
+	return sendReportWebhook(cfg, report, from, to, csvData)
+}
+
+func sendReportWebhook(cfg config.Config, report store.ScheduledReport, from, to time.Time, csvData []byte) error {
+	if cfg.ReportWebhookURL == "" {
+		return errors.New("report webhook is not configured")
+	}
 	payload := map[string]interface{}{
 		"report_id":  report.ReportID,
 		"tenant_id":  report.TenantID,
@@ -226,6 +246,32 @@ func sendReport(cfg config.Config, report store.ScheduledReport, from, to time.T
 		return fmt.Errorf("report webhook status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func sendReportEmail(cfg config.Config, report store.ScheduledReport, from, to time.Time, csvData []byte) error {
+	if cfg.ReportEmailHost == "" || cfg.ReportEmailFrom == "" {
+		return errors.New("report email is not configured")
+	}
+	subject := cfg.ReportEmailSubject
+	if subject == "" {
+		subject = "QMS Scheduled Report"
+	}
+	body := fmt.Sprintf("Report %s\nTenant: %s\nBranch: %s\nService: %s\nFrom: %s\nTo: %s\n\n%s",
+		report.ReportID,
+		report.TenantID,
+		report.BranchID,
+		report.ServiceID,
+		from.Format(time.RFC3339),
+		to.Format(time.RFC3339),
+		string(csvData),
+	)
+	message := []byte(fmt.Sprintf("To: %s\r\nSubject: %s\r\n\r\n%s", report.Recipient, subject, body))
+	addr := fmt.Sprintf("%s:%d", cfg.ReportEmailHost, cfg.ReportEmailPort)
+	var auth smtp.Auth
+	if cfg.ReportEmailUser != "" {
+		auth = smtp.PlainAuth("", cfg.ReportEmailUser, cfg.ReportEmailPass, cfg.ReportEmailHost)
+	}
+	return smtp.SendMail(addr, auth, cfg.ReportEmailFrom, []string{report.Recipient}, message)
 }
 
 func formatTime(value *time.Time) string {

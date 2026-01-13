@@ -7,16 +7,17 @@ import (
 )
 
 type Config struct {
-	Port           string
-	DatabaseURL    string
-	PollInterval   time.Duration
-	BatchSize      int
-	MaxAttempts    int
-	SMSProvider    string
-	EmailProvider  string
-	WAProvider     string
-	PushProvider   string
+	Port              string
+	DatabaseURL       string
+	PollInterval      time.Duration
+	BatchSize         int
+	MaxAttempts       int
+	SMSProvider       string
+	EmailProvider     string
+	WAProvider        string
+	PushProvider      string
 	ReminderThreshold int
+	PrefsPath         string
 }
 
 func Load() Config {
@@ -26,16 +27,17 @@ func Load() Config {
 	}
 
 	return Config{
-		Port:         port,
-		DatabaseURL:  os.Getenv("DB_DSN"),
-		PollInterval: readDurationSeconds("NOTIF_POLL_SECONDS", 5),
-		BatchSize:    readInt("NOTIF_BATCH_SIZE", 50),
-		MaxAttempts:  readInt("NOTIF_MAX_ATTEMPTS", 3),
-		SMSProvider:  os.Getenv("NOTIF_SMS_PROVIDER"),
-		EmailProvider: os.Getenv("NOTIF_EMAIL_PROVIDER"),
-		WAProvider:    os.Getenv("NOTIF_WA_PROVIDER"),
-		PushProvider:  os.Getenv("NOTIF_PUSH_PROVIDER"),
+		Port:              port,
+		DatabaseURL:       os.Getenv("DB_DSN"),
+		PollInterval:      readDurationSeconds("NOTIF_POLL_SECONDS", 5),
+		BatchSize:         readInt("NOTIF_BATCH_SIZE", 50),
+		MaxAttempts:       readInt("NOTIF_MAX_ATTEMPTS", 3),
+		SMSProvider:       os.Getenv("NOTIF_SMS_PROVIDER"),
+		EmailProvider:     os.Getenv("NOTIF_EMAIL_PROVIDER"),
+		WAProvider:        os.Getenv("NOTIF_WA_PROVIDER"),
+		PushProvider:      os.Getenv("NOTIF_PUSH_PROVIDER"),
 		ReminderThreshold: readInt("NOTIF_REMINDER_THRESHOLD", 3),
+		PrefsPath:         os.Getenv("NOTIF_PREFS_PATH"),
 	}
 }
 

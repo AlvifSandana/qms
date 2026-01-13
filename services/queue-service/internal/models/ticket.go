@@ -8,6 +8,7 @@ type Ticket struct {
 	TenantID     string     `json:"tenant_id,omitempty"`
 	BranchID     string     `json:"branch_id,omitempty"`
 	ServiceID    string     `json:"service_id,omitempty"`
+	AreaID       string     `json:"area_id,omitempty"`
 	Status       string     `json:"status"`
 	CreatedAt    time.Time  `json:"created_at"`
 	RequestID    string     `json:"request_id"`

@@ -99,6 +99,7 @@ func (s *Store) CreateTicket(ctx context.Context, input store.CreateTicketInput)
 	ticket.TenantID = input.TenantID
 	ticket.BranchID = input.BranchID
 	ticket.ServiceID = input.ServiceID
+	ticket.AreaID = input.AreaID
 	ticket.Phone = input.Phone
 
 	if err = insertOutboxEvent(ctx, tx, input.TenantID, ticket); err != nil {
@@ -110,6 +111,79 @@ func (s *Store) CreateTicket(ctx context.Context, input store.CreateTicketInput)
 	}
 
 	return ticket, true, nil
+}
+
+func (s *Store) GetTicket(ctx context.Context, tenantID, branchID, ticketID string) (models.Ticket, bool, error) {
+	var ticket models.Ticket
+	var calledAtNull sql.NullTime
+	var counterIDNull sql.NullString
+	var servedAtNull sql.NullTime
+	var completedAtNull sql.NullTime
+	var areaIDNull sql.NullString
+	row := s.pool.QueryRow(ctx, `
+		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, area_id, tenant_id
+		FROM tickets
+		WHERE ticket_id = $1 AND tenant_id = $2 AND branch_id = $3
+	`, ticketID, tenantID, branchID)
+	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.Ticket{}, false, store.ErrTicketNotFound
+		}
+		return models.Ticket{}, false, err
+	}
+	ticket.CalledAt = nullTimePtr(calledAtNull)
+	ticket.CounterID = nullStringPtr(counterIDNull)
+	ticket.ServedAt = nullTimePtr(servedAtNull)
+	ticket.CompletedAt = nullTimePtr(completedAtNull)
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
+	}
+	return ticket, true, nil
+}
+
+func (s *Store) ListQueue(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error) {
+	query := `
+		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, area_id, tenant_id
+		FROM tickets
+		WHERE tenant_id = $1 AND branch_id = $2 AND status IN ('waiting','held')
+	`
+	args := []interface{}{tenantID, branchID}
+	if serviceID != "" {
+		query += " AND service_id = $3"
+		args = append(args, serviceID)
+	}
+	query += " ORDER BY created_at ASC"
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tickets []models.Ticket
+	for rows.Next() {
+		var ticket models.Ticket
+		var calledAtNull sql.NullTime
+		var counterIDNull sql.NullString
+		var servedAtNull sql.NullTime
+		var completedAtNull sql.NullTime
+		var areaIDNull sql.NullString
+		if err := rows.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
+			return nil, err
+		}
+		ticket.CalledAt = nullTimePtr(calledAtNull)
+		ticket.CounterID = nullStringPtr(counterIDNull)
+		ticket.ServedAt = nullTimePtr(servedAtNull)
+		ticket.CompletedAt = nullTimePtr(completedAtNull)
+		if areaIDNull.Valid {
+			ticket.AreaID = areaIDNull.String
+		}
+		tickets = append(tickets, ticket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tickets, nil
 }
 
 func (s *Store) CallNext(ctx context.Context, input store.CallNextInput) (models.Ticket, bool, error) {
@@ -239,7 +313,7 @@ func (s *Store) AutoNoShow(ctx context.Context, grace time.Duration, batchSize i
 
 	cutoff := time.Now().UTC().Add(-grace)
 	rows, err := tx.Query(ctx, `
-		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, tenant_id, branch_id, service_id
+		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, tenant_id, branch_id, service_id, area_id
 		FROM tickets
 		WHERE status = 'called' AND called_at <= $1
 		ORDER BY called_at ASC
@@ -263,14 +337,18 @@ func (s *Store) AutoNoShow(ctx context.Context, grace time.Duration, batchSize i
 		var ticket models.Ticket
 		var calledAtNull sql.NullTime
 		var counterIDNull sql.NullString
+		var areaIDNull sql.NullString
 		var tenantID string
 		var branchID string
 		var serviceID string
-		if err := rows.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &tenantID, &branchID, &serviceID); err != nil {
+		if err := rows.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &tenantID, &branchID, &serviceID, &areaIDNull); err != nil {
 			return 0, err
 		}
 		ticket.CalledAt = nullTimePtr(calledAtNull)
 		ticket.CounterID = nullStringPtr(counterIDNull)
+		if areaIDNull.Valid {
+			ticket.AreaID = areaIDNull.String
+		}
 		items = append(items, noShowItem{ticket: ticket, tenantID: tenantID, branchID: branchID, serviceID: serviceID})
 		ids = append(ids, ticket.TicketID)
 	}
@@ -371,11 +449,12 @@ func (s *Store) applyNoShow(ctx context.Context, input store.TicketActionInput, 
 	var ticket models.Ticket
 	var calledAtNull sql.NullTime
 	var counterIDNull sql.NullString
+	var areaIDNull sql.NullString
 	query := `
 		UPDATE tickets
 		SET status = 'no_show'
 		WHERE ticket_id = $1 AND tenant_id = $2 AND branch_id = $3 AND status = 'called'
-		RETURNING ticket_id, ticket_number, status, created_at, called_at, counter_id, service_id, branch_id, tenant_id
+		RETURNING ticket_id, ticket_number, status, created_at, called_at, counter_id, service_id, branch_id, area_id, tenant_id
 	`
 	if returnToQueue {
 		query = `
@@ -385,12 +464,12 @@ func (s *Store) applyNoShow(ctx context.Context, input store.TicketActionInput, 
 				called_at = NULL,
 				returned = TRUE
 			WHERE ticket_id = $1 AND tenant_id = $2 AND branch_id = $3 AND status = 'called'
-			RETURNING ticket_id, ticket_number, status, created_at, called_at, counter_id, service_id, branch_id, tenant_id
+			RETURNING ticket_id, ticket_number, status, created_at, called_at, counter_id, service_id, branch_id, area_id, tenant_id
 		`
 	}
 
 	row := tx.QueryRow(ctx, query, input.TicketID, input.TenantID, input.BranchID)
-	if err = row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &ticket.ServiceID, &ticket.BranchID, &ticket.TenantID); err != nil {
+	if err = row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &ticket.ServiceID, &ticket.BranchID, &areaIDNull, &ticket.TenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			state, _, exists, err := loadTicketState(ctx, tx, input.TicketID, input.TenantID, input.BranchID)
 			if err != nil {
@@ -410,6 +489,9 @@ func (s *Store) applyNoShow(ctx context.Context, input store.TicketActionInput, 
 	ticket.RequestID = input.RequestID
 	ticket.CalledAt = nullTimePtr(calledAtNull)
 	ticket.CounterID = nullStringPtr(counterIDNull)
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
+	}
 
 	if err = insertActionRequest(ctx, tx, "no_show", input.RequestID, input.TenantID, input.BranchID, input.ServiceID, input.CounterID, ticket.TicketID); err != nil {
 		return models.Ticket{}, false, err
@@ -428,7 +510,7 @@ func (s *Store) applyNoShow(ctx context.Context, input store.TicketActionInput, 
 
 func (s *Store) SnapshotTickets(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, tenant_id
+		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, area_id, tenant_id
 		FROM tickets
 		WHERE tenant_id = $1 AND branch_id = $2 AND service_id = $3
 			AND status IN ('waiting', 'called', 'serving')
@@ -446,13 +528,17 @@ func (s *Store) SnapshotTickets(ctx context.Context, tenantID, branchID, service
 		var counterIDNull sql.NullString
 		var servedAtNull sql.NullTime
 		var completedAtNull sql.NullTime
-		if err := rows.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
+		var areaIDNull sql.NullString
+		if err := rows.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
 			return nil, err
 		}
 		ticket.CalledAt = nullTimePtr(calledAtNull)
 		ticket.CounterID = nullStringPtr(counterIDNull)
 		ticket.ServedAt = nullTimePtr(servedAtNull)
 		ticket.CompletedAt = nullTimePtr(completedAtNull)
+		if areaIDNull.Valid {
+			ticket.AreaID = areaIDNull.String
+		}
 		tickets = append(tickets, ticket)
 	}
 	if err := rows.Err(); err != nil {
@@ -467,15 +553,16 @@ func (s *Store) GetActiveTicket(ctx context.Context, tenantID, branchID, counter
 	var counterIDNull sql.NullString
 	var servedAtNull sql.NullTime
 	var completedAtNull sql.NullTime
+	var areaIDNull sql.NullString
 	row := s.pool.QueryRow(ctx, `
-		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, tenant_id
+		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, area_id, tenant_id
 		FROM tickets
 		WHERE tenant_id = $1 AND branch_id = $2 AND counter_id = $3
 			AND status IN ('called', 'serving')
 		ORDER BY called_at DESC
 		LIMIT 1
 	`, tenantID, branchID, counterID)
-	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
+	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.Ticket{}, false, nil
 		}
@@ -485,6 +572,9 @@ func (s *Store) GetActiveTicket(ctx context.Context, tenantID, branchID, counter
 	ticket.CounterID = nullStringPtr(counterIDNull)
 	ticket.ServedAt = nullTimePtr(servedAtNull)
 	ticket.CompletedAt = nullTimePtr(completedAtNull)
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
+	}
 	return ticket, true, nil
 }
 
@@ -784,6 +874,7 @@ func (s *Store) TransferTicket(ctx context.Context, input store.TicketActionInpu
 
 	var ticket models.Ticket
 	var fromServiceID string
+	var areaIDNull sql.NullString
 	row := tx.QueryRow(ctx, `
 		WITH current AS (
 			SELECT service_id
@@ -796,18 +887,21 @@ func (s *Store) TransferTicket(ctx context.Context, input store.TicketActionInpu
 				service_id = $4,
 				counter_id = NULL
 			WHERE ticket_id = $1 AND tenant_id = $2 AND branch_id = $3 AND status IN ('waiting','called','serving')
-			RETURNING ticket_id, ticket_number, status, created_at
+			RETURNING ticket_id, ticket_number, status, created_at, area_id
 		)
-		SELECT updated.ticket_id, updated.ticket_number, updated.status, updated.created_at, current.service_id
+		SELECT updated.ticket_id, updated.ticket_number, updated.status, updated.created_at, updated.area_id, current.service_id
 		FROM updated
 		JOIN current ON TRUE
 	`, input.TicketID, input.TenantID, input.BranchID, input.ServiceID)
 
-	if err = row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &fromServiceID); err != nil {
+	if err = row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &areaIDNull, &fromServiceID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.Ticket{}, false, store.ErrInvalidState
 		}
 		return models.Ticket{}, false, err
+	}
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
 	}
 
 	ticket.RequestID = input.RequestID
@@ -977,6 +1071,7 @@ func updateNextAppointmentTicketWithFilter(ctx context.Context, tx pgx.Tx, input
 	var calledAtNull sql.NullTime
 	var counterIDNull sql.NullString
 	var priorityClass sql.NullString
+	var areaIDNull sql.NullString
 
 	args := []interface{}{input.TenantID, input.BranchID, input.ServiceID, input.CounterID, calledAt}
 	cutoffFilter := ""
@@ -1002,14 +1097,17 @@ func updateNextAppointmentTicketWithFilter(ctx context.Context, tx pgx.Tx, input
 			called_at = $5
 		FROM next_ticket
 		WHERE tickets.ticket_id = next_ticket.ticket_id
-		RETURNING tickets.ticket_id, tickets.ticket_number, tickets.status, tickets.created_at, tickets.called_at, tickets.counter_id, tickets.priority_class, tickets.branch_id, tickets.service_id, tickets.tenant_id
+		RETURNING tickets.ticket_id, tickets.ticket_number, tickets.status, tickets.created_at, tickets.called_at, tickets.counter_id, tickets.priority_class, tickets.branch_id, tickets.service_id, tickets.area_id, tickets.tenant_id
 	`
 	row := tx.QueryRow(ctx, query, args...)
-	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &priorityClass, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
+	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &priorityClass, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
 		return models.Ticket{}, "", err
 	}
 	ticket.CalledAt = nullTimePtr(calledAtNull)
 	ticket.CounterID = nullStringPtr(counterIDNull)
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
+	}
 	if priorityClass.Valid {
 		return ticket, priorityClass.String, nil
 	}
@@ -1037,6 +1135,7 @@ func updateNextWalkinTicketWithFilter(ctx context.Context, tx pgx.Tx, input stor
 	var calledAtNull sql.NullTime
 	var counterIDNull sql.NullString
 	var priorityClass sql.NullString
+	var areaIDNull sql.NullString
 	query := `
 		WITH next_ticket AS (
 			SELECT ticket_id
@@ -1053,14 +1152,17 @@ func updateNextWalkinTicketWithFilter(ctx context.Context, tx pgx.Tx, input stor
 			called_at = $5
 		FROM next_ticket
 		WHERE tickets.ticket_id = next_ticket.ticket_id
-		RETURNING tickets.ticket_id, tickets.ticket_number, tickets.status, tickets.created_at, tickets.called_at, tickets.counter_id, tickets.priority_class, tickets.branch_id, tickets.service_id, tickets.tenant_id
+		RETURNING tickets.ticket_id, tickets.ticket_number, tickets.status, tickets.created_at, tickets.called_at, tickets.counter_id, tickets.priority_class, tickets.branch_id, tickets.service_id, tickets.area_id, tickets.tenant_id
 	`
 	row := tx.QueryRow(ctx, query, input.TenantID, input.BranchID, input.ServiceID, input.CounterID, calledAt)
-	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &priorityClass, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
+	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &priorityClass, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
 		return models.Ticket{}, "", err
 	}
 	ticket.CalledAt = nullTimePtr(calledAtNull)
 	ticket.CounterID = nullStringPtr(counterIDNull)
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
+	}
 	if priorityClass.Valid {
 		return ticket, priorityClass.String, nil
 	}
@@ -1196,6 +1298,7 @@ func insertOutboxEvent(ctx context.Context, tx pgx.Tx, tenantID string, ticket m
 		"tenant_id":     ticket.TenantID,
 		"branch_id":     ticket.BranchID,
 		"service_id":    ticket.ServiceID,
+		"area_id":       ticket.AreaID,
 		"phone":         ticket.Phone,
 	}
 
@@ -1225,6 +1328,7 @@ func insertOutboxEventCalled(ctx context.Context, tx pgx.Tx, tenantID string, ti
 		"tenant_id":     ticket.TenantID,
 		"branch_id":     ticket.BranchID,
 		"service_id":    ticket.ServiceID,
+		"area_id":       ticket.AreaID,
 	}
 
 	payloadJSON, err := jsonBytes(payload)
@@ -1255,6 +1359,7 @@ func insertOutboxEventGeneric(ctx context.Context, tx pgx.Tx, tenantID, eventTyp
 		"tenant_id":     ticket.TenantID,
 		"branch_id":     ticket.BranchID,
 		"service_id":    ticket.ServiceID,
+		"area_id":       ticket.AreaID,
 	}
 
 	payloadJSON, err := jsonBytes(payload)
@@ -1282,6 +1387,8 @@ func insertOutboxEventTransfer(ctx context.Context, tx pgx.Tx, tenantID string, 
 		"to_service_id":   toServiceID,
 		"tenant_id":       ticket.TenantID,
 		"branch_id":       ticket.BranchID,
+		"service_id":      ticket.ServiceID,
+		"area_id":         ticket.AreaID,
 	}
 	if reason != "" {
 		payload["reason"] = reason
@@ -1314,6 +1421,7 @@ func insertOutboxEventNoShow(ctx context.Context, tx pgx.Tx, tenantID string, ti
 		"tenant_id":     ticket.TenantID,
 		"branch_id":     ticket.BranchID,
 		"service_id":    ticket.ServiceID,
+		"area_id":       ticket.AreaID,
 	}
 
 	payloadJSON, err := jsonBytes(payload)
@@ -1370,16 +1478,20 @@ func insertTicketEvent(ctx context.Context, tx pgx.Tx, ticketID, eventType strin
 
 func findTicketByRequestID(ctx context.Context, tx pgx.Tx, requestID string) (models.Ticket, bool, error) {
 	var ticket models.Ticket
+	var areaIDNull sql.NullString
 	row := tx.QueryRow(ctx, `
-		SELECT ticket_id, ticket_number, status, created_at, request_id
+		SELECT ticket_id, ticket_number, status, created_at, request_id, area_id, branch_id, service_id, tenant_id
 		FROM tickets
 		WHERE request_id = $1
 	`, requestID)
-	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &ticket.RequestID); err != nil {
+	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &ticket.RequestID, &areaIDNull, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.Ticket{}, false, nil
 		}
 		return models.Ticket{}, false, err
+	}
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
 	}
 	return ticket, true, nil
 }
@@ -1405,22 +1517,30 @@ func findActionRequest(ctx context.Context, tx pgx.Tx, action, requestID string)
 	var ticket models.Ticket
 	var calledAtNull sql.NullTime
 	var counterIDNull sql.NullString
+	var areaIDNull sql.NullString
 	row = tx.QueryRow(ctx, `
-		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, branch_id, service_id, tenant_id
+		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, branch_id, service_id, area_id, tenant_id
 		FROM tickets
 		WHERE ticket_id = $1
 	`, ticketID.String)
-	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
+	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
 		return models.Ticket{}, false, false, err
 	}
 	ticket.RequestID = requestID
 	ticket.CalledAt = nullTimePtr(calledAtNull)
 	ticket.CounterID = nullStringPtr(counterIDNull)
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
+	}
 
 	return ticket, true, false, nil
 }
 
 func (s *Store) updateTicketStatus(ctx context.Context, input store.TicketActionInput, action, fromStatus, toStatus, eventType, timestampColumn string, requireCounter bool) (models.Ticket, bool, error) {
+	if !store.ValidTransition(action, fromStatus) {
+		return models.Ticket{}, false, store.ErrInvalidState
+	}
+
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return models.Ticket{}, false, err
@@ -1474,15 +1594,16 @@ func (s *Store) updateTicketStatus(ctx context.Context, input store.TicketAction
 		argPos++
 	}
 
-	updateQuery += " RETURNING ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, tenant_id"
+	updateQuery += " RETURNING ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, area_id, tenant_id"
 
 	var ticket models.Ticket
 	var calledAtNull sql.NullTime
 	var counterIDNull sql.NullString
 	var servedAtNull sql.NullTime
 	var completedAtNull sql.NullTime
+	var areaIDNull sql.NullString
 	row := tx.QueryRow(ctx, updateQuery, args...)
-	if err = row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
+	if err = row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			state, counter, exists, err := loadTicketState(ctx, tx, input.TicketID, input.TenantID, input.BranchID)
 			if err != nil {
@@ -1507,6 +1628,9 @@ func (s *Store) updateTicketStatus(ctx context.Context, input store.TicketAction
 	ticket.CounterID = nullStringPtr(counterIDNull)
 	ticket.ServedAt = nullTimePtr(servedAtNull)
 	ticket.CompletedAt = nullTimePtr(completedAtNull)
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
+	}
 
 	if err = insertActionRequest(ctx, tx, action, input.RequestID, input.TenantID, input.BranchID, input.ServiceID, input.CounterID, ticket.TicketID); err != nil {
 		return models.Ticket{}, false, err
@@ -1524,6 +1648,10 @@ func (s *Store) updateTicketStatus(ctx context.Context, input store.TicketAction
 }
 
 func (s *Store) emitTicketEvent(ctx context.Context, input store.TicketActionInput, action, requiredStatus, eventType string) (models.Ticket, bool, error) {
+	if !store.ValidTransition(action, requiredStatus) {
+		return models.Ticket{}, false, store.ErrInvalidState
+	}
+
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return models.Ticket{}, false, err
@@ -1607,12 +1735,13 @@ func getTicketByID(ctx context.Context, tx pgx.Tx, ticketID, tenantID, branchID 
 	var counterIDNull sql.NullString
 	var servedAtNull sql.NullTime
 	var completedAtNull sql.NullTime
+	var areaIDNull sql.NullString
 	row := tx.QueryRow(ctx, `
-		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, tenant_id
+		SELECT ticket_id, ticket_number, status, created_at, called_at, counter_id, served_at, completed_at, branch_id, service_id, area_id, tenant_id
 		FROM tickets
 		WHERE ticket_id = $1 AND tenant_id = $2 AND branch_id = $3
 	`, ticketID, tenantID, branchID)
-	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &ticket.TenantID); err != nil {
+	if err := row.Scan(&ticket.TicketID, &ticket.TicketNumber, &ticket.Status, &ticket.CreatedAt, &calledAtNull, &counterIDNull, &servedAtNull, &completedAtNull, &ticket.BranchID, &ticket.ServiceID, &areaIDNull, &ticket.TenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.Ticket{}, store.ErrTicketNotFound
 		}
@@ -1622,6 +1751,9 @@ func getTicketByID(ctx context.Context, tx pgx.Tx, ticketID, tenantID, branchID 
 	ticket.CounterID = nullStringPtr(counterIDNull)
 	ticket.ServedAt = nullTimePtr(servedAtNull)
 	ticket.CompletedAt = nullTimePtr(completedAtNull)
+	if areaIDNull.Valid {
+		ticket.AreaID = areaIDNull.String
+	}
 	return ticket, nil
 }
 

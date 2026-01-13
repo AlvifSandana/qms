@@ -15,6 +15,8 @@ import (
 
 type fakeStore struct {
 	createFn        func(ctx context.Context, input store.CreateTicketInput) (models.Ticket, bool, error)
+	getTicketFn     func(ctx context.Context, tenantID, branchID, ticketID string) (models.Ticket, bool, error)
+	listQueueFn     func(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error)
 	callFn          func(ctx context.Context, input store.CallNextInput) (models.Ticket, bool, error)
 	startFn         func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
 	completeFn      func(ctx context.Context, input store.TicketActionInput) (models.Ticket, bool, error)
@@ -39,6 +41,20 @@ func (f fakeStore) CreateTicket(ctx context.Context, input store.CreateTicketInp
 		return models.Ticket{}, false, nil
 	}
 	return f.createFn(ctx, input)
+}
+
+func (f fakeStore) GetTicket(ctx context.Context, tenantID, branchID, ticketID string) (models.Ticket, bool, error) {
+	if f.getTicketFn == nil {
+		return models.Ticket{}, false, nil
+	}
+	return f.getTicketFn(ctx, tenantID, branchID, ticketID)
+}
+
+func (f fakeStore) ListQueue(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error) {
+	if f.listQueueFn == nil {
+		return nil, nil
+	}
+	return f.listQueueFn(ctx, tenantID, branchID, serviceID)
 }
 
 func (f fakeStore) CallNext(ctx context.Context, input store.CallNextInput) (models.Ticket, bool, error) {
@@ -202,6 +218,59 @@ func TestCreateTicketSuccess(t *testing.T) {
 
 	if ticket.TicketID == "" || ticket.TicketNumber == "" || ticket.Status != models.StatusWaiting {
 		t.Fatalf("unexpected ticket response: %+v", ticket)
+	}
+}
+
+func TestGetTicketSuccess(t *testing.T) {
+	st := fakeStore{
+		getTicketFn: func(ctx context.Context, tenantID, branchID, ticketID string) (models.Ticket, bool, error) {
+			return models.Ticket{
+				TicketID:     ticketID,
+				TicketNumber: "CS-010",
+				Status:       models.StatusWaiting,
+			}, true, nil
+		},
+	}
+	h := NewHandler(st, Options{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tickets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa?tenant_id=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&branch_id=cccccccc-cccc-cccc-cccc-cccccccccccc", nil)
+	resp := httptest.NewRecorder()
+
+	h.Routes().ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.Code)
+	}
+}
+
+func TestGetTicketMissingParams(t *testing.T) {
+	h := NewHandler(fakeStore{}, Options{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tickets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", nil)
+	resp := httptest.NewRecorder()
+
+	h.Routes().ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", resp.Code)
+	}
+}
+
+func TestListQueueSuccess(t *testing.T) {
+	st := fakeStore{
+		listQueueFn: func(ctx context.Context, tenantID, branchID, serviceID string) ([]models.Ticket, error) {
+			return []models.Ticket{{TicketID: "ticket-1"}}, nil
+		},
+	}
+	h := NewHandler(st, Options{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/queues?tenant_id=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&branch_id=cccccccc-cccc-cccc-cccc-cccccccccccc&service_id=dddddddd-dddd-dddd-dddd-dddddddddddd", nil)
+	resp := httptest.NewRecorder()
+
+	h.Routes().ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.Code)
 	}
 }
 

@@ -46,6 +46,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
+  /api/auth/sso/saml:
+    post:
+      summary: SAML SSO login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenant_id:
+                  type: string
+                assertion:
+                  type: string
+      responses:
+        "200":
+          description: Auth session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
 components:
   schemas:
     LoginRequest:

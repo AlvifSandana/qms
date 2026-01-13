@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"expvar"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,6 +37,8 @@ func NewHandler(store store.Store) *Handler {
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", expvar.Handler())
+	mux.HandleFunc("/healthz", h.handleHealth)
 	mux.HandleFunc("/api/admin/branches", h.handleBranches)
 	mux.HandleFunc("/api/admin/branches/", h.handleBranch)
 	mux.HandleFunc("/api/admin/areas", h.handleAreas)
@@ -60,6 +63,14 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/admin/approvals/prefs", h.handleApprovalPrefs)
 	mux.HandleFunc("/api/admin/approvals/", h.handleApprovalAction)
 	return mux
+}
+
+func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) handleBranches(w http.ResponseWriter, r *http.Request) {

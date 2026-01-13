@@ -79,6 +79,60 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TicketEvent"
+  /api/tickets/{ticket_id}:
+    get:
+      summary: Ticket detail
+      parameters:
+        - in: path
+          name: ticket_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: branch_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+  /api/queues:
+    get:
+      summary: Queue list (waiting/held)
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: branch_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: service_id
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Queue tickets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Ticket"
   /api/events:
     get:
       summary: Outbox events feed
@@ -177,6 +231,8 @@ components:
         counter_id:
           type: string
         service_id:
+          type: string
+        area_id:
           type: string
         created_at:
           type: string

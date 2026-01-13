@@ -2,6 +2,7 @@ const state = {
   queueBase: "http://localhost:8080",
   tenantId: "",
   branchId: "",
+  areaId: "",
   serviceId: "",
   serviceIds: [],
   lastAfter: "",
@@ -16,6 +17,7 @@ const tenantInput = document.getElementById("tenantId");
 const branchInput = document.getElementById("branchId");
 const deviceInput = document.getElementById("deviceId");
 const serviceInput = document.getElementById("serviceId");
+const areaInput = document.getElementById("areaId");
 const langSelect = document.getElementById("langSelect");
 const audioToggle = document.getElementById("audioToggle");
 const quietStartInput = document.getElementById("quietStart");
@@ -25,6 +27,7 @@ const connectBtn = document.getElementById("connectBtn");
 const callList = document.getElementById("callList");
 const status = document.getElementById("status");
 const playlistEl = document.getElementById("playlist");
+const brandLogo = document.getElementById("brandLogo");
 const nowNumber = document.getElementById("nowNumber");
 const nowCounter = document.getElementById("nowCounter");
 const nowTime = document.getElementById("nowTime");
@@ -161,6 +164,9 @@ function matchFilter(payload) {
   if (state.branchId && payload.branch_id && payload.branch_id !== state.branchId) {
     return false;
   }
+  if (state.areaId && payload.area_id !== state.areaId) {
+    return false;
+  }
   if (state.serviceIds.length > 0 && payload.service_id && !state.serviceIds.includes(payload.service_id)) {
     return false;
   }
@@ -177,13 +183,22 @@ async function loadSnapshot() {
       continue;
     }
     const tickets = await response.json();
-    const called = tickets.filter((t) => t.status === "called" || t.status === "serving");
+    const called = tickets.filter((t) => {
+      if (t.status !== "called" && t.status !== "serving") {
+        return false;
+      }
+      if (state.areaId && t.area_id !== state.areaId) {
+        return false;
+      }
+      return true;
+    });
     called.forEach((ticket) => addCall({
       ticket_id: ticket.ticket_id,
       ticket_number: ticket.ticket_number,
       counter_id: ticket.counter_id,
       called_at: ticket.called_at || ticket.created_at,
       service_id: ticket.service_id,
+      area_id: ticket.area_id,
     }));
   }
 }
@@ -211,6 +226,7 @@ function connect() {
   state.queueBase = queueBaseInput.value.trim();
   state.tenantId = tenantInput.value.trim();
   state.branchId = branchInput.value.trim();
+  state.areaId = areaInput.value.trim();
   state.serviceIds = parseServiceIds(serviceInput.value);
   state.serviceId = state.serviceIds[0] || "";
   state.language = langSelect.value;
@@ -384,6 +400,10 @@ function applyConfig(payload) {
     state.serviceIds = parseServiceIds(payload.service_id);
     state.serviceId = state.serviceIds[0] || "";
   }
+  if (payload.area_id) {
+    areaInput.value = payload.area_id;
+    state.areaId = String(payload.area_id).trim();
+  }
   if (Array.isArray(payload.service_ids) && payload.service_ids.length > 0) {
     serviceInput.value = payload.service_ids.join(", ");
     state.serviceIds = payload.service_ids.map((id) => String(id).trim()).filter(Boolean);
@@ -403,6 +423,19 @@ function applyConfig(payload) {
     }));
     playlistIndex = 0;
     updatePlaylist();
+  }
+  if (payload.branding && typeof payload.branding === "object") {
+    const branding = payload.branding;
+    if (branding.logo_url) {
+      brandLogo.src = String(branding.logo_url);
+      brandLogo.hidden = false;
+    }
+    if (branding.accent_color) {
+      document.documentElement.style.setProperty("--accent", String(branding.accent_color));
+    }
+    if (branding.background_url) {
+      document.documentElement.style.setProperty("--bg-image", `url(${String(branding.background_url)})`);
+    }
   }
 }
 

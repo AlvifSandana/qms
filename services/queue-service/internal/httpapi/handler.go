@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"expvar"
 	"net/http"
 	"strconv"
 	"strings"
@@ -61,11 +62,13 @@ func NewHandler(store store.TicketStore, options Options) *Handler {
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", h.handleHealth)
+	mux.Handle("/metrics", expvar.Handler())
 	mux.HandleFunc("/api/tickets", h.handleTickets)
 	mux.HandleFunc("/api/tickets/actions/call-next", h.handleCallNext)
 	mux.HandleFunc("/api/tickets/active", h.handleActiveTicket)
 	mux.HandleFunc("/api/tickets/snapshot", h.handleTicketSnapshot)
 	mux.HandleFunc("/api/tickets/", h.handleTicketActions)
+	mux.HandleFunc("/api/queues", h.handleQueues)
 	mux.HandleFunc("/api/appointments/checkin", h.handleAppointmentCheckin)
 	mux.HandleFunc("/api/events", h.handleEvents)
 	mux.HandleFunc("/api/counters", h.handleCounters)
@@ -483,6 +486,10 @@ func (h *Handler) handleServices(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleTicketActions(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/tickets/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		h.handleGetTicket(w, r, parts[0])
+		return
+	}
 	if len(parts) < 2 {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -535,6 +542,34 @@ func (h *Handler) handleTicketActions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) handleGetTicket(w http.ResponseWriter, r *http.Request, ticketID string) {
+	if !isValidUUID(ticketID) {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "ticket_id must be a UUID")
+		return
+	}
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	branchID := strings.TrimSpace(r.URL.Query().Get("branch_id"))
+	if tenantID == "" || branchID == "" {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id are required")
+		return
+	}
+	if !isValidUUID(tenantID) || !isValidUUID(branchID) {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id must be UUIDs")
+		return
+	}
+	ticket, found, err := h.store.GetTicket(r.Context(), tenantID, branchID, ticketID)
+	if err != nil {
+		status, code, msg := mapError(err)
+		writeError(w, "", status, code, msg)
+		return
+	}
+	if !found {
+		writeError(w, "", http.StatusNotFound, "ticket_not_found", "ticket not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, ticket)
+}
+
 func (h *Handler) handleTicketEvents(w http.ResponseWriter, r *http.Request, ticketID string) {
 	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 	if tenantID == "" {
@@ -552,6 +587,35 @@ func (h *Handler) handleTicketEvents(w http.ResponseWriter, r *http.Request, tic
 		return
 	}
 	writeJSON(w, http.StatusOK, events)
+}
+
+func (h *Handler) handleQueues(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	branchID := strings.TrimSpace(r.URL.Query().Get("branch_id"))
+	serviceID := strings.TrimSpace(r.URL.Query().Get("service_id"))
+	if tenantID == "" || branchID == "" {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id are required")
+		return
+	}
+	if !isValidUUID(tenantID) || !isValidUUID(branchID) {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id must be UUIDs")
+		return
+	}
+	if serviceID != "" && !isValidUUID(serviceID) {
+		writeError(w, "", http.StatusBadRequest, "invalid_request", "service_id must be a UUID when provided")
+		return
+	}
+	tickets, err := h.store.ListQueue(r.Context(), tenantID, branchID, serviceID)
+	if err != nil {
+		status, code, msg := mapError(err)
+		writeError(w, "", status, code, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, tickets)
 }
 
 type ticketActionRequest struct {

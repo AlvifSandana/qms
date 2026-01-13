@@ -26,13 +26,14 @@ func main() {
 
 	store := postgres.NewStore(pool)
 	w := worker.New(store, worker.Config{
-		BatchSize:   cfg.BatchSize,
-		MaxAttempts: cfg.MaxAttempts,
-		SMSProvider: cfg.SMSProvider,
-		EmailProvider: cfg.EmailProvider,
-		WAProvider: cfg.WAProvider,
-		PushProvider: cfg.PushProvider,
+		BatchSize:         cfg.BatchSize,
+		MaxAttempts:       cfg.MaxAttempts,
+		SMSProvider:       cfg.SMSProvider,
+		EmailProvider:     cfg.EmailProvider,
+		WAProvider:        cfg.WAProvider,
+		PushProvider:      cfg.PushProvider,
 		ReminderThreshold: cfg.ReminderThreshold,
+		PrefsPath:         cfg.PrefsPath,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -11,7 +11,43 @@ paths:
       responses:
         "200":
           description: OK
-  /api/realtime:
+  /api/analytics/kpis:
+    get:
+      summary: KPI summary
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: branch_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: service_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: from
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: to
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: KPI summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeKPI"
+  /api/analytics/realtime:
     get:
       summary: Realtime KPIs
       parameters:
@@ -37,7 +73,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RealtimeKPI"
-  /api/anomalies:
+  /api/analytics/export:
+    get:
+      summary: Export tickets CSV
+      parameters:
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: branch_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: service_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: from
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: to
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV export
+  /api/analytics/anomalies:
     get:
       summary: List anomalies
       parameters:
@@ -55,7 +123,7 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Anomaly"
-  /api/reports:
+  /api/analytics/reports:
     get:
       summary: List scheduled reports
       parameters:
@@ -73,6 +141,61 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Report"
+  /api/analytics/bi/tickets:
+    get:
+      summary: BI connector export (JSON)
+      parameters:
+        - in: header
+          name: X-BI-Token
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: tenant_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: branch_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: service_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: from
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: to
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TicketRow"
+  /api/analytics/telemetry:
+    post:
+      summary: Agent action telemetry (best-effort)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "204":
+          description: Accepted
 components:
   schemas:
     RealtimeKPI:
@@ -116,5 +239,26 @@ components:
         active:
           type: boolean
         last_sent_at:
+          type: string
+          format: date-time
+    TicketRow:
+      type: object
+      properties:
+        ticket_id:
+          type: string
+        ticket_number:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        called_at:
+          type: string
+          format: date-time
+        served_at:
+          type: string
+          format: date-time
+        completed_at:
           type: string
           format: date-time

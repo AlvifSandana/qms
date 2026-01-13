@@ -51,6 +51,54 @@ let reconnectDelay = 1000;
 let reconnectTimer = null;
 let availableCounters = [];
 
+function analyticsBase() {
+  return state.queueBase.replace("8080", "8084");
+}
+
+function sendTelemetry(event) {
+  const payload = JSON.stringify(event);
+  const url = `${analyticsBase()}/api/analytics/telemetry`;
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(url, payload);
+    return;
+  }
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {});
+}
+
+async function trackAction(action, context, fn) {
+  const started = Date.now();
+  let success = false;
+  let error = "";
+  try {
+    const result = await fn();
+    if (result && typeof result.ok === "boolean") {
+      success = result.ok;
+    } else {
+      success = true;
+    }
+    return result;
+  } catch (err) {
+    error = err?.message || "error";
+    throw err;
+  } finally {
+    sendTelemetry({
+      action,
+      duration_ms: Date.now() - started,
+      success,
+      error,
+      tenant_id: state.tenantId,
+      branch_id: state.branchId,
+      counter_id: context?.counterId || "",
+      ticket_id: context?.ticketId || "",
+    });
+  }
+}
+
 function setStatus(text) {
   status.textContent = text;
 }
@@ -432,11 +480,11 @@ async function performAction(action) {
     branch_id: branchId,
     counter_id: counterId,
   };
-  const response = await fetch(`${state.queueBase}/api/tickets/${ticketId}/actions/${action}`, {
+  const response = await trackAction(action, { counterId, ticketId }, () => fetch(`${state.queueBase}/api/tickets/${ticketId}/actions/${action}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
   if (!response.ok) {
     setStatus(`Action failed: ${action}`);
     setAlert(`Action failed: ${action}. Please retry.`);
@@ -466,11 +514,11 @@ async function transferTicket() {
     to_service_id: serviceId,
   };
 
-  const response = await fetch(`${state.queueBase}/api/tickets/${ticketId}/actions/transfer`, {
+  const response = await trackAction("transfer", { counterId, ticketId }, () => fetch(`${state.queueBase}/api/tickets/${ticketId}/actions/transfer`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
 
   if (!response.ok) {
     setStatus("Transfer failed");
@@ -498,11 +546,11 @@ async function callNext() {
     service_id: serviceId,
     counter_id: counterId,
   };
-  const response = await fetch(`${state.queueBase}/api/tickets/actions/call-next`, {
+  const response = await trackAction("call_next", { counterId }, () => fetch(`${state.queueBase}/api/tickets/actions/call-next`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
 
   if (response.status === 409) {
     setStatus("No tickets available");

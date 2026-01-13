@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -14,26 +15,29 @@ import (
 )
 
 type Worker struct {
-	store       store.Store
-	batchSize   int
-	maxAttempts int
+	store             store.Store
+	batchSize         int
+	maxAttempts       int
 	reminderThreshold int
-	smsProvider Provider
-	emailProvider Provider
-	waProvider Provider
-	pushProvider Provider
+	smsProvider       Provider
+	emailProvider     Provider
+	waProvider        Provider
+	pushProvider      Provider
+	prefs             notificationPrefs
+	prefsPath         string
 }
 
 type payloadData map[string]interface{}
 
 type Config struct {
-	BatchSize   int
-	MaxAttempts int
-	SMSProvider string
-	EmailProvider string
-	WAProvider string
-	PushProvider string
+	BatchSize         int
+	MaxAttempts       int
+	SMSProvider       string
+	EmailProvider     string
+	WAProvider        string
+	PushProvider      string
 	ReminderThreshold int
+	PrefsPath         string
 }
 
 func New(store store.Store, cfg Config) *Worker {
@@ -50,14 +54,16 @@ func New(store store.Store, cfg Config) *Worker {
 		threshold = 3
 	}
 	return &Worker{
-		store: store,
-		batchSize: batch,
-		maxAttempts: maxAttempts,
+		store:             store,
+		batchSize:         batch,
+		maxAttempts:       maxAttempts,
 		reminderThreshold: threshold,
-		smsProvider: newProvider(cfg.SMSProvider, "sms"),
-		emailProvider: newProvider(cfg.EmailProvider, "email"),
-		waProvider: newProvider(cfg.WAProvider, "whatsapp"),
-		pushProvider: newProvider(cfg.PushProvider, "push"),
+		smsProvider:       newProvider(cfg.SMSProvider, "sms"),
+		emailProvider:     newProvider(cfg.EmailProvider, "email"),
+		waProvider:        newProvider(cfg.WAProvider, "whatsapp"),
+		pushProvider:      newProvider(cfg.PushProvider, "push"),
+		prefs:             loadNotificationPrefs(cfg.PrefsPath),
+		prefsPath:         cfg.PrefsPath,
 	}
 }
 
@@ -105,6 +111,10 @@ func (w *Worker) processEvent(ctx context.Context, event store.OutboxEvent) erro
 		return err
 	}
 
+	if w.prefsPath != "" {
+		w.prefs = loadNotificationPrefs(w.prefsPath)
+	}
+
 	templateID := templateForEvent(event.Type)
 	if templateID == "" {
 		return nil
@@ -133,6 +143,9 @@ func (w *Worker) sendNotifications(ctx context.Context, tenantID, templateID str
 		if recipient == "" {
 			continue
 		}
+		if !w.prefs.Allow(channel.name, recipient) {
+			continue
+		}
 
 		lang := "id"
 		body, err := w.store.GetTemplate(ctx, tenantID, templateID, lang, channel.name)
@@ -146,12 +159,12 @@ func (w *Worker) sendNotifications(ctx context.Context, tenantID, templateID str
 
 		notification := store.Notification{
 			NotificationID: uuid.NewString(),
-			TenantID:  tenantID,
-			Channel:   channel.name,
-			Recipient: recipient,
-			Status:    "pending",
-			Attempts:  0,
-			Message:   message,
+			TenantID:       tenantID,
+			Channel:        channel.name,
+			Recipient:      recipient,
+			Status:         "pending",
+			Attempts:       0,
+			Message:        message,
 		}
 		if err := w.store.InsertNotification(ctx, notification); err != nil {
 			return err
@@ -361,6 +374,59 @@ func (w *Worker) providerFor(channel string) Provider {
 	default:
 		return w.smsProvider
 	}
+}
+
+type notificationPrefs struct {
+	blocked map[string]map[string]struct{}
+}
+
+func loadNotificationPrefs(path string) notificationPrefs {
+	if path == "" {
+		return notificationPrefs{}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return notificationPrefs{}
+	}
+	data := map[string][]string{}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return notificationPrefs{}
+	}
+	blocked := make(map[string]map[string]struct{})
+	for channel, recipients := range data {
+		channel = strings.ToLower(strings.TrimSpace(channel))
+		if channel == "" {
+			continue
+		}
+		set := make(map[string]struct{})
+		for _, recipient := range recipients {
+			trimmed := strings.TrimSpace(recipient)
+			if trimmed == "" {
+				continue
+			}
+			set[trimmed] = struct{}{}
+		}
+		if len(set) > 0 {
+			blocked[channel] = set
+		}
+	}
+	return notificationPrefs{blocked: blocked}
+}
+
+func (p notificationPrefs) Allow(channel, recipient string) bool {
+	if p.blocked == nil {
+		return true
+	}
+	channel = strings.ToLower(strings.TrimSpace(channel))
+	if channel == "" || recipient == "" {
+		return true
+	}
+	recipients, ok := p.blocked[channel]
+	if !ok {
+		return true
+	}
+	_, blocked := recipients[recipient]
+	return !blocked
 }
 
 func Start(ctx context.Context, interval time.Duration, w *Worker) {

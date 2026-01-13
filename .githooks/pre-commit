@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+mapfile -t go_files < <(git diff --cached --name-only -- '*.go')
+
+if [ ${#go_files[@]} -eq 0 ]; then
+  exit 0
+fi
+
+echo "Running gofmt on staged files..."
+for file in "${go_files[@]}"; do
+  gofmt -w "$file"
+  git add "$file"
+done
+
+modules=()
+for file in "${go_files[@]}"; do
+  dir=$(dirname "$file")
+  while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+    if [ -f "$root/$dir/go.mod" ]; then
+      modules+=("$root/$dir")
+      break
+    fi
+    dir=$(dirname "$dir")
+  done
+done
+
+if [ ${#modules[@]} -eq 0 ]; then
+  exit 0
+fi
+
+uniq_modules=$(printf "%s\n" "${modules[@]}" | sort -u)
+for module in $uniq_modules; do
+  echo "Running go test in $module"
+  (cd "$module" && go test ./...)
+done

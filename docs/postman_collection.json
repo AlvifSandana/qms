@@ -1,0 +1,32 @@
+{
+  "info": {
+    "name": "QMS API Collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Ticket",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": {"raw": "http://localhost:8080/api/tickets", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "tickets"]},
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_id\": \"{{request_id}}\",\n  \"tenant_id\": \"{{tenant_id}}\",\n  \"branch_id\": \"{{branch_id}}\",\n  \"service_id\": \"{{service_id}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Call Next",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": {"raw": "http://localhost:8080/api/tickets/actions/call-next", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "tickets", "actions", "call-next"]},
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_id\": \"{{request_id}}\",\n  \"tenant_id\": \"{{tenant_id}}\",\n  \"branch_id\": \"{{branch_id}}\",\n  \"service_id\": \"{{service_id}}\",\n  \"counter_id\": \"{{counter_id}}\"\n}"
+        }
+      }
+    }
+  ]
+}

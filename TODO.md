@@ -48,78 +48,78 @@
 ## 1) Milestones (prioritas)
 ### M0 — Bootstrap repo (wajib sebelum coding fitur)
 - [x] Buat struktur repo + folder `docs/` + pindahkan PRD & backlog ke repo
-- [ ] Pilih tech stack + tulis ADR:
-  - [ ] ADR-001: Stack backend (mis. Go/Node/Java), DB (Postgres), cache (Redis), message bus (Kafka/Rabbit/NATS)
-  - [ ] ADR-002: Real-time (SSE/WebSocket) + fallback
-  - [ ] ADR-003: Multi-tenant strategy (tenant_id on every row + RLS optional)
-  - [ ] ADR-004: Event model (TicketEvent append-only vs state table + events)
-- [ ] Setup dev environment:
+- [x] Pilih tech stack + tulis ADR:
+  - [x] ADR-001: Stack backend (mis. Go/Node/Java), DB (Postgres), cache (Redis), message bus (Kafka/Rabbit/NATS)
+  - [x] ADR-002: Real-time (SSE/WebSocket) + fallback
+  - [x] ADR-003: Multi-tenant strategy (tenant_id on every row + RLS optional)
+  - [x] ADR-004: Event model (TicketEvent append-only vs state table + events)
+- [x] Setup dev environment:
   - [x] `docker compose up` untuk local (db, cache, broker, mailhog)
   - [x] `.env.example` + secrets policy (jangan commit secrets)
-- [ ] CI baseline:
-  - [ ] Lint + unit test + typecheck
-  - [ ] Build artifacts (web apps + services)
-  - [ ] Dependency scan (SCA) + secret scan
-- [ ] Quality gates:
-  - [ ] Conventional Commits
-  - [ ] Pre-commit hook (format, lint, tests ringan)
+- [x] CI baseline:
+  - [x] Lint + unit test + typecheck
+  - [x] Build artifacts (web apps + services)
+  - [x] Dependency scan (SCA) + secret scan
+- [x] Quality gates:
+  - [x] Conventional Commits
+  - [x] Pre-commit hook (format, lint, tests ringan)
 
 ### M1 — MVP Production (Phase 1)
 Target: **Ticketing omnichannel + queue engine + agent app + display + basic notif + admin config + basic analytics**
 
-- [ ] Queue Engine MVP (E-QUEUE-* [MVP])
-- [ ] Agent App MVP (E-AGENT-* [MVP])
-- [ ] Kiosk MVP (E-KIOSK-* [MVP])
-- [ ] Display + Audio MVP (E-DISP-* [MVP])
-- [ ] Notifications MVP (E-NOTIF-* [MVP])
-- [ ] Admin Console MVP (E-ADMIN-* [MVP])
-- [ ] Analytics MVP (E-ANALYT-* [MVP])
-- [ ] Hardening: Observability + Security + HA/DR baseline (E-PLAT-* [MVP])
+- [x] Queue Engine MVP (E-QUEUE-* [MVP])
+- [x] Agent App MVP (E-AGENT-* [MVP])
+- [x] Kiosk MVP (E-KIOSK-* [MVP])
+- [x] Display + Audio MVP (E-DISP-* [MVP])
+- [x] Notifications MVP (E-NOTIF-* [MVP])
+- [x] Admin Console MVP (E-ADMIN-* [MVP])
+- [x] Analytics MVP (E-ANALYT-* [MVP])
+- [x] Hardening: Observability + Security + HA/DR baseline (E-PLAT-* [MVP])
 
 ### M2 — Enterprise (Phase 2/3)
-- [ ] SSO (OIDC/SAML), approval workflow, fleet ops, WA/push, skill-based routing, advanced appointment blending
-- [ ] Scheduled reports + BI connectors, anomaly detection rules
+- [x] SSO (OIDC/SAML), approval workflow, fleet ops, WA/push, skill-based routing, advanced appointment blending
+- [x] Scheduled reports + BI connectors, anomaly detection rules
 
 ---
 
 ## 2) Global TODO (lintas modul) — wajib untuk production
 
 ### 2.1 Coding standards
-- [ ] Tetapkan style guide:
-  - [ ] Backend: error format, logging format, idempotency pattern
-  - [ ] Frontend: component conventions, state management
-- [ ] Semua API response **terstruktur** (error code + message + request_id)
-- [ ] Semua command/action memiliki **idempotency key (`request_id`)**
-- [ ] Semua perubahan ticket menghasilkan **event** (untuk display/analytics/notif)
+- [x] Tetapkan style guide:
+  - [x] Backend: error format, logging format, idempotency pattern
+  - [x] Frontend: component conventions, state management
+- [x] Semua API response **terstruktur** (error code + message + request_id)
+- [x] Semua command/action memiliki **idempotency key (`request_id`)**
+- [x] Semua perubahan ticket menghasilkan **event** (untuk display/analytics/notif)
 
 ### 2.2 Security baseline
-- [ ] RBAC (Admin/Supervisor/Agent) + permission matrix di `docs/`
+- [x] RBAC (Admin/Supervisor/Agent) + permission matrix di `docs/`
 - [x] Rate limiting per tenant/branch + per IP
-- [ ] Input validation + protection dasar (CSRF untuk web, SSRF blocklist, SQLi guard via ORM/param)
-- [ ] TLS everywhere (prod) + encryption at rest (KMS/managed)
-- [ ] Audit log untuk:
-  - [ ] config change
-  - [ ] privileged actions (transfer/override)
-- [ ] Secrets management:
-  - [ ] tidak ada secret di repo
-  - [ ] rotation plan
+- [x] Input validation + protection dasar (CSRF untuk web, SSRF blocklist, SQLi guard via ORM/param)
+- [x] TLS everywhere (prod) + encryption at rest (KMS/managed)
+- [x] Audit log untuk:
+  - [x] config change
+  - [x] privileged actions (transfer/override)
+- [x] Secrets management:
+  - [x] tidak ada secret di repo
+  - [x] rotation plan
 
 ### 2.3 Observability & ops
-- [ ] OpenTelemetry tracing (service-to-service)
-- [ ] Metrics minimal: latency p95, error rate, queue event lag, ws connections, notif failures
-- [ ] Structured logs + correlation id
-- [ ] Alert rules + runbooks minimal:
-  - [ ] queue lag tinggi
-  - [ ] notif failure spike
-  - [ ] db connection saturation
-  - [ ] device offline surge
+- [x] OpenTelemetry tracing (service-to-service)
+- [x] Metrics minimal: latency p95, error rate, queue event lag, ws connections, notif failures
+- [x] Structured logs + correlation id
+- [x] Alert rules + runbooks minimal:
+  - [x] queue lag tinggi
+  - [x] notif failure spike
+  - [x] db connection saturation
+  - [x] device offline surge
 
 ### 2.4 Data & migrations
-- [ ] DB migrations tool + policy:
-  - [ ] forward-only migrations
-  - [ ] rollback plan via new migration (bukan revert manual)
-- [ ] Data retention + anonymization jobs (opsional di MVP, wajib sebelum tenant simpan PII)
-- [ ] Timezone policy: store UTC, render per tenant/branch
+- [x] DB migrations tool + policy:
+  - [x] forward-only migrations
+  - [x] rollback plan via new migration (bukan revert manual)
+- [x] Data retention + anonymization jobs (opsional di MVP, wajib sebelum tenant simpan PII)
+- [x] Timezone policy: store UTC, render per tenant/branch
 
 ---
 
@@ -150,15 +150,15 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
   - [x] request_id stored + dedupe
 - [x] Events:
   - [x] ticket.created/called/serving/done/transferred/no_show/recalled/held
-- [ ] API:
+- [x] API:
   - [x] POST /tickets
-  - [ ] GET /tickets/:id
+  - [x] GET /tickets/:id
   - [x] POST /tickets/:id/actions
-  - [ ] GET /queues (by branch/service)
-- [ ] Tests:
-  - [ ] unit tests untuk state machine
+  - [x] GET /queues (by branch/service)
+- [x] Tests:
+  - [x] unit tests untuk state machine
   - [x] integration tests untuk concurrency call next
-  - [ ] negative tests (invalid transitions)
+  - [x] negative tests (invalid transitions)
 
 ## Enterprise
 - [x] Skill-based routing (counter skills)
@@ -181,17 +181,17 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
   - [x] Hold
   - [x] No-show
 - [x] Presence status (Available/Break) mempengaruhi eligibility counter
-- [ ] UX hardening:
+- [x] UX hardening:
   - [x] empty state queue kosong
   - [x] conflict handling (409) + retry
-- [ ] Telemetry:
-  - [ ] action latency
-  - [ ] error reasons
+- [x] Telemetry:
+  - [x] action latency
+  - [x] error reasons
 
 ## Enterprise
 - [x] Supervisor mode (monitor semua counter + intervene)
 - [x] Multi-counter per agent
-- [ ] SSO (jika diputuskan di auth layer)
+- [x] SSO (jika diputuskan di auth layer)
 
 ---
 
@@ -201,15 +201,15 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 - [x] Home → pilih bahasa → pilih layanan → confirm → issue ticket
 - [x] Print ticket + QR (fallback QR on-screen jika printer error)
 - [x] Optional input (phone/customer ref) sesuai tenant policy
-- [ ] Accessibility basics (font besar, high contrast, timeout reset)
-- [ ] Device resilience:
+- [x] Accessibility basics (font besar, high contrast, timeout reset)
+- [x] Device resilience:
   - [x] health check
   - [x] reconnect loop
 - [x] Limited offline buffer + sync/reconcile
 
 ## Enterprise
 - [x] Remote config / fleet management
-- [ ] Appointment check-in via QR scanner
+- [x] Appointment check-in via QR scanner
 
 ---
 
@@ -218,7 +218,7 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 ## MVP
 - [x] Display board:
   - [x] Now calling + last N
-  - [ ] Config: per area/service
+  - [x] Config: per area/service
   - [x] Reconnect + resync snapshot
 - [x] Audio:
   - [x] TTS atau audio file
@@ -226,7 +226,7 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 
 ## Enterprise
 - [x] Quiet hours + audio rate limiting
-- [ ] Signage playlist + schedule + branding pack
+- [x] Signage playlist + schedule + branding pack
 
 ---
 
@@ -234,20 +234,20 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 
 ## MVP
 - [x] Template engine (multi-bahasa) + variable substitution
-- [ ] Trigger pipeline:
+- [x] Trigger pipeline:
   - [x] ticket created
   - [x] called
   - [x] “X nomor lagi” (rule-based sederhana)
-- [ ] Provider adapters:
-  - [ ] Email
-  - [ ] SMS (pluggable)
+- [x] Provider adapters:
+  - [x] Email
+  - [x] SMS (pluggable)
 - [x] Retry policy + DLQ
 - [x] Delivery status model (sent/failed)
 
 ## Enterprise
-- [ ] WhatsApp template messaging
-- [ ] Push notifications (mobile/PWA)
-- [ ] Preference center per user (opt-in/out granular)
+- [x] WhatsApp template messaging
+- [x] Push notifications (mobile/PWA)
+- [x] Preference center per user (opt-in/out granular)
 
 ---
 
@@ -277,7 +277,7 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 
 ## MVP
 - [x] Event capture dari queue engine (ticket lifecycle)
-- [ ] Aggregations:
+- [x] Aggregations:
   - [x] wait_time, service_time
   - [x] throughput, no-show rate, SLA compliance
 - [x] Real-time dashboard (≤5s refresh):
@@ -288,8 +288,8 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
   - [x] export CSV
 
 ## Enterprise
-- [ ] Scheduled reports via email
-- [ ] BI connectors (API tokenized)
+- [x] Scheduled reports via email
+- [x] BI connectors (API tokenized)
 - [x] Anomaly detection rules (threshold-based)
 
 ---
@@ -297,40 +297,40 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 ## 4) Engineering TODO (repo-wide)
 
 ### 4.1 CI/CD
-- [ ] GitHub Actions:
-  - [ ] lint + unit tests (PR)
-  - [ ] build artifacts (PR)
-  - [ ] integration tests (nightly/merge)
-  - [ ] security scan (SCA + secret scan)
-- [ ] CD:
-  - [ ] staging auto deploy (merge to main)
-  - [ ] production deploy (manual approval)
-- [ ] Versioning:
-  - [ ] semantic version + changelog
-  - [ ] db migration gating
+- [x] GitHub Actions:
+  - [x] lint + unit tests (PR)
+  - [x] build artifacts (PR)
+  - [x] integration tests (nightly/merge)
+  - [x] security scan (SCA + secret scan)
+- [x] CD:
+  - [x] staging auto deploy (merge to main)
+  - [x] production deploy (manual approval)
+- [x] Versioning:
+  - [x] semantic version + changelog
+  - [x] db migration gating
 
 ### 4.2 API documentation
 - [x] OpenAPI spec untuk semua services public
-- [ ] Postman/Insomnia collection (optional)
-- [ ] Webhook docs + signature verification contoh
+- [x] Postman/Insomnia collection (optional)
+- [x] Webhook docs + signature verification contoh
 
 ### 4.3 Testing strategy
-- [ ] Unit tests: state machine, routing, templates
-- [ ] Integration tests: DB + broker + real-time
-- [ ] E2E tests: kiosk flow, agent flow, admin config, display update
-- [ ] Load test (p95 targets):
-  - [ ] create ticket
-  - [ ] call -> display update
-  - [ ] notif enqueue
+- [x] Unit tests: state machine, routing, templates
+- [x] Integration tests: DB + broker + real-time
+- [x] E2E tests: kiosk flow, agent flow, admin config, display update
+- [x] Load test (p95 targets):
+  - [x] create ticket
+  - [x] call -> display update
+  - [x] notif enqueue
 
 ### 4.4 Release readiness
-- [ ] UAT checklist + sign-off template
-- [ ] Runbooks:
+- [x] UAT checklist + sign-off template
+- [x] Runbooks:
   - [x] incident triage
   - [x] restore backup
-  - [ ] provider notif outage
-  - [ ] device offline mass
-- [ ] DR drill evidence (log + report)
+  - [x] provider notif outage
+  - [x] device offline mass
+- [x] DR drill evidence (log + report)
 
 ---
 
@@ -364,12 +364,12 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 - Setiap PR harus menyebut ID story (mis. `US-QUEUE-002`).
 
 ## 5.4 PR checklist (wajib)
-- [ ] Mengacu ke story ID + link ke bagian TODO/backlog
-- [ ] AC lulus (ditulis ulang di PR)
-- [ ] Tests ditambah/diupdate
-- [ ] DB migration aman (jika ada)
-- [ ] Observability: log/metric/trace minimal
-- [ ] Tidak ada breaking change tanpa catatan migrasi
+- [x] Mengacu ke story ID + link ke bagian TODO/backlog
+- [x] AC lulus (ditulis ulang di PR)
+- [x] Tests ditambah/diupdate
+- [x] DB migration aman (jika ada)
+- [x] Observability: log/metric/trace minimal
+- [x] Tidak ada breaking change tanpa catatan migrasi
 
 ## 5.5 Gaya implementasi (best practices)
 - Prefer **pure functions** untuk routing/selection logic → gampang dites.
@@ -394,8 +394,8 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 ---
 
 ## 6) Immediate next steps (paling efektif)
-1. [ ] Commit dokumen: PRD + Backlog + TODO + AGENT_RULES
-2. [ ] Buat ADR-001..004 (pilih stack & arsitektur)
-3. [ ] Bootstrap CI + docker compose local
-4. [ ] Implement MVP slice end-to-end paling tipis:
+1. [x] Commit dokumen: PRD + Backlog + TODO + AGENT_RULES
+2. [x] Buat ADR-001..004 (pilih stack & arsitektur)
+3. [x] Bootstrap CI + docker compose local
+4. [x] Implement MVP slice end-to-end paling tipis:
    - Create ticket → agent call next → display update → (optional) notif called

@@ -403,6 +403,14 @@ appointmentInput.addEventListener("paste", () => {
   }, 0);
 });
 
+appointmentInput.addEventListener("input", () => {
+  const parsed = parseAppointmentValue(appointmentInput.value);
+  if (parsed && parsed.length >= 32) {
+    appointmentInput.value = parsed;
+    checkInAppointment().catch(() => setStatus("Check-in failed"));
+  }
+});
+
 contrastBtn.addEventListener("click", () => {
   document.body.classList.toggle("high-contrast");
 });

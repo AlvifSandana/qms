@@ -12,12 +12,20 @@ import (
 	"qms/queue-service/internal/config"
 	"qms/queue-service/internal/httpapi"
 	"qms/queue-service/internal/store/postgres"
+	"qms/queue-service/internal/telemetry"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
 	cfg := config.Load()
+	shutdownTelemetry := telemetry.Setup("queue-service")
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTelemetry(ctx)
+	}()
 
 	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
@@ -39,9 +47,10 @@ func main() {
 		TenantBurst:     cfg.TenantRateLimitBurst,
 	})
 
+	otelHandler := otelhttp.NewHandler(httpapi.LoggingMiddleware(limiter.Middleware(handler.Routes())), "queue-service")
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      httpapi.LoggingMiddleware(limiter.Middleware(handler.Routes())),
+		Handler:      otelHandler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

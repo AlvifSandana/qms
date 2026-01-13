@@ -9,6 +9,9 @@
 <body>
   <main class="page">
     <header class="header">
+      <div class="branding">
+        <img id="brandLogo" class="logo" alt="Brand logo" hidden />
+      </div>
       <div>
         <p class="eyebrow">Queue Display</p>
         <h1>Now Calling</h1>
@@ -40,6 +43,10 @@
         <label>
           Service ID
           <input id="serviceId" placeholder="UUID, UUID" />
+        </label>
+        <label>
+          Area ID (optional)
+          <input id="areaId" placeholder="UUID" />
         </label>
         <label>
           Language

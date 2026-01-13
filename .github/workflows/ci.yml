@@ -6,6 +6,44 @@ on:
     branches: [main]
 
 jobs:
+  go-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: golangci-lint (auth-service)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61.0
+          working-directory: services/auth-service
+      - name: golangci-lint (admin-service)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61.0
+          working-directory: services/admin-service
+      - name: golangci-lint (queue-service)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61.0
+          working-directory: services/queue-service
+      - name: golangci-lint (notification-service)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61.0
+          working-directory: services/notification-service
+      - name: golangci-lint (analytics-service)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61.0
+          working-directory: services/analytics-service
+      - name: golangci-lint (realtime-service)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61.0
+          working-directory: services/realtime-service
+
   go-tests:
     runs-on: ubuntu-latest
     steps:
@@ -31,3 +69,68 @@ jobs:
       - name: Go test (realtime-service)
         run: go test ./...
         working-directory: services/realtime-service
+
+  go-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Go build (auth-service)
+        run: go build ./...
+        working-directory: services/auth-service
+      - name: Go build (admin-service)
+        run: go build ./...
+        working-directory: services/admin-service
+      - name: Go build (queue-service)
+        run: go build ./...
+        working-directory: services/queue-service
+      - name: Go build (notification-service)
+        run: go build ./...
+        working-directory: services/notification-service
+      - name: Go build (analytics-service)
+        run: go build ./...
+        working-directory: services/analytics-service
+      - name: Go build (realtime-service)
+        run: go build ./...
+        working-directory: services/realtime-service
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build static apps
+        run: scripts/build-apps.sh
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Trivy FS scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+  semantic-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  commitlint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wagoid/commitlint-github-action@v5
+        with:
+          configFile: .commitlintrc.json
