@@ -47,15 +47,15 @@
 
 ## 1) Milestones (prioritas)
 ### M0 — Bootstrap repo (wajib sebelum coding fitur)
-- [ ] Buat struktur repo + folder `docs/` + pindahkan PRD & backlog ke repo
+- [x] Buat struktur repo + folder `docs/` + pindahkan PRD & backlog ke repo
 - [ ] Pilih tech stack + tulis ADR:
   - [ ] ADR-001: Stack backend (mis. Go/Node/Java), DB (Postgres), cache (Redis), message bus (Kafka/Rabbit/NATS)
   - [ ] ADR-002: Real-time (SSE/WebSocket) + fallback
   - [ ] ADR-003: Multi-tenant strategy (tenant_id on every row + RLS optional)
   - [ ] ADR-004: Event model (TicketEvent append-only vs state table + events)
 - [ ] Setup dev environment:
-  - [ ] `docker compose up` untuk local (db, cache, broker, mailhog)
-  - [ ] `.env.example` + secrets policy (jangan commit secrets)
+  - [x] `docker compose up` untuk local (db, cache, broker, mailhog)
+  - [x] `.env.example` + secrets policy (jangan commit secrets)
 - [ ] CI baseline:
   - [ ] Lint + unit test + typecheck
   - [ ] Build artifacts (web apps + services)
@@ -94,7 +94,7 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 
 ### 2.2 Security baseline
 - [ ] RBAC (Admin/Supervisor/Agent) + permission matrix di `docs/`
-- [ ] Rate limiting per tenant/branch + per IP
+- [x] Rate limiting per tenant/branch + per IP
 - [ ] Input validation + protection dasar (CSRF untuk web, SSRF blocklist, SQLi guard via ORM/param)
 - [ ] TLS everywhere (prod) + encryption at rest (KMS/managed)
 - [ ] Audit log untuk:
@@ -131,66 +131,66 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 # 3A) services/queue-service (Queue Engine)
 
 ## MVP
-- [ ] Implement Ticket state machine + transitions:
-  - [ ] Enqueue
-  - [ ] Call next (concurrency-safe)
-  - [ ] Start serving
-  - [ ] Complete
-  - [ ] Cancel (waiting only)
-- [ ] Implement actions:
-  - [ ] Recall
-  - [ ] Hold/Unhold
-  - [ ] Skip/No-show manual
-  - [ ] Transfer service/counter
-  - [ ] Auto no-show via scheduler/grace timer
-- [ ] Implement routing:
-  - [ ] FIFO per service
-  - [ ] Priority basic + anti-starvation minimal
-- [ ] Idempotency:
-  - [ ] request_id stored + dedupe
-- [ ] Events:
-  - [ ] ticket.created/called/serving/done/transferred/no_show/recalled/held
+- [x] Implement Ticket state machine + transitions:
+  - [x] Enqueue
+  - [x] Call next (concurrency-safe)
+  - [x] Start serving
+  - [x] Complete
+  - [x] Cancel (waiting only)
+- [x] Implement actions:
+  - [x] Recall
+  - [x] Hold/Unhold
+  - [x] Skip/No-show manual
+  - [x] Transfer service/counter
+  - [x] Auto no-show via scheduler/grace timer
+- [x] Implement routing:
+  - [x] FIFO per service
+  - [x] Priority basic + anti-starvation minimal
+- [x] Idempotency:
+  - [x] request_id stored + dedupe
+- [x] Events:
+  - [x] ticket.created/called/serving/done/transferred/no_show/recalled/held
 - [ ] API:
-  - [ ] POST /tickets
+  - [x] POST /tickets
   - [ ] GET /tickets/:id
-  - [ ] POST /tickets/:id/actions
+  - [x] POST /tickets/:id/actions
   - [ ] GET /queues (by branch/service)
 - [ ] Tests:
   - [ ] unit tests untuk state machine
-  - [ ] integration tests untuk concurrency call next
+  - [x] integration tests untuk concurrency call next
   - [ ] negative tests (invalid transitions)
 
 ## Enterprise
-- [ ] Skill-based routing (counter skills)
-- [ ] Advanced appointment blending (quota/weight)
-- [ ] Append-only TicketEvent store (audit-grade) + rehydrate
+- [x] Skill-based routing (counter skills)
+- [x] Advanced appointment blending (quota/weight)
+- [x] Append-only TicketEvent store (audit-grade) + rehydrate
 
 ---
 
 # 3B) apps/agent-web (Agent App)
 
 ## MVP
-- [ ] Auth + role gating (Agent only)
-- [ ] Queue view per service (filter, realtime update)
-- [ ] “My counter” panel:
-  - [ ] Call next
-  - [ ] Recall
-  - [ ] Start
-  - [ ] Complete
-  - [ ] Transfer
-  - [ ] Hold
-  - [ ] No-show
-- [ ] Presence status (Available/Break) mempengaruhi eligibility counter
+- [x] Auth + role gating (Agent only)
+- [x] Queue view per service (filter, realtime update)
+- [x] “My counter” panel:
+  - [x] Call next
+  - [x] Recall
+  - [x] Start
+  - [x] Complete
+  - [x] Transfer
+  - [x] Hold
+  - [x] No-show
+- [x] Presence status (Available/Break) mempengaruhi eligibility counter
 - [ ] UX hardening:
-  - [ ] empty state queue kosong
-  - [ ] conflict handling (409) + retry
+  - [x] empty state queue kosong
+  - [x] conflict handling (409) + retry
 - [ ] Telemetry:
   - [ ] action latency
   - [ ] error reasons
 
 ## Enterprise
-- [ ] Supervisor mode (monitor semua counter + intervene)
-- [ ] Multi-counter per agent
+- [x] Supervisor mode (monitor semua counter + intervene)
+- [x] Multi-counter per agent
 - [ ] SSO (jika diputuskan di auth layer)
 
 ---
@@ -198,17 +198,17 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 # 3C) apps/kiosk-app (Kiosk)
 
 ## MVP
-- [ ] Home → pilih bahasa → pilih layanan → confirm → issue ticket
-- [ ] Print ticket + QR (fallback QR on-screen jika printer error)
-- [ ] Optional input (phone/customer ref) sesuai tenant policy
+- [x] Home → pilih bahasa → pilih layanan → confirm → issue ticket
+- [x] Print ticket + QR (fallback QR on-screen jika printer error)
+- [x] Optional input (phone/customer ref) sesuai tenant policy
 - [ ] Accessibility basics (font besar, high contrast, timeout reset)
 - [ ] Device resilience:
-  - [ ] health check
-  - [ ] reconnect loop
-- [ ] Limited offline buffer + sync/reconcile
+  - [x] health check
+  - [x] reconnect loop
+- [x] Limited offline buffer + sync/reconcile
 
 ## Enterprise
-- [ ] Remote config / fleet management
+- [x] Remote config / fleet management
 - [ ] Appointment check-in via QR scanner
 
 ---
@@ -216,16 +216,16 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 # 3D) apps/display-app (Display & Audio)
 
 ## MVP
-- [ ] Display board:
-  - [ ] Now calling + last N
+- [x] Display board:
+  - [x] Now calling + last N
   - [ ] Config: per area/service
-  - [ ] Reconnect + resync snapshot
-- [ ] Audio:
-  - [ ] TTS atau audio file
-  - [ ] Recall re-announce
+  - [x] Reconnect + resync snapshot
+- [x] Audio:
+  - [x] TTS atau audio file
+  - [x] Recall re-announce
 
 ## Enterprise
-- [ ] Quiet hours + audio rate limiting
+- [x] Quiet hours + audio rate limiting
 - [ ] Signage playlist + schedule + branding pack
 
 ---
@@ -233,16 +233,16 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 # 3E) services/notification-service (Notifications)
 
 ## MVP
-- [ ] Template engine (multi-bahasa) + variable substitution
+- [x] Template engine (multi-bahasa) + variable substitution
 - [ ] Trigger pipeline:
-  - [ ] ticket created
-  - [ ] called
+  - [x] ticket created
+  - [x] called
   - [x] “X nomor lagi” (rule-based sederhana)
 - [ ] Provider adapters:
   - [ ] Email
   - [ ] SMS (pluggable)
-- [ ] Retry policy + DLQ
-- [ ] Delivery status model (sent/failed)
+- [x] Retry policy + DLQ
+- [x] Delivery status model (sent/failed)
 
 ## Enterprise
 - [ ] WhatsApp template messaging
@@ -254,43 +254,43 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 # 3F) apps/admin-web + services/admin-api (Admin Console)
 
 ## MVP
-- [ ] CRUD:
-  - [ ] Branch + Area
-  - [ ] Service catalog (SLA, jam layanan, priority)
-  - [ ] Counter/Room mapping
-  - [ ] Users + Roles (RBAC)
-  - [ ] Register devices (kiosk/display) + status
-- [ ] Policy config:
-  - [ ] no-show grace
-  - [ ] return-to-queue
-  - [ ] priority basic
-- [ ] Audit log viewer (filter basic)
+- [x] CRUD:
+  - [x] Branch + Area
+  - [x] Service catalog (SLA, jam layanan, priority)
+  - [x] Counter/Room mapping
+  - [x] Users + Roles (RBAC)
+  - [x] Register devices (kiosk/display) + status
+- [x] Policy config:
+  - [x] no-show grace
+  - [x] return-to-queue
+  - [x] priority basic
+- [x] Audit log viewer (filter basic)
 
 ## Enterprise
-- [ ] Approval workflow config changes
-- [ ] Holiday calendar + blackout dates (appointment)
-- [ ] Fleet ops (remote update, config versioning, rollback)
+- [x] Approval workflow config changes
+- [x] Holiday calendar + blackout dates (appointment)
+- [x] Fleet ops (remote update, config versioning, rollback)
 
 ---
 
 # 3G) services/analytics-service + dashboard (Analytics)
 
 ## MVP
-- [ ] Event capture dari queue engine (ticket lifecycle)
+- [x] Event capture dari queue engine (ticket lifecycle)
 - [ ] Aggregations:
-  - [ ] wait_time, service_time
-  - [ ] throughput, no-show rate, SLA compliance
-- [ ] Real-time dashboard (≤5s refresh):
-  - [ ] queue length
-  - [ ] counter load
-- [ ] Historical dashboard:
-  - [ ] filter range tanggal/branch/service/priority/channel
-  - [ ] export CSV
+  - [x] wait_time, service_time
+  - [x] throughput, no-show rate, SLA compliance
+- [x] Real-time dashboard (≤5s refresh):
+  - [x] queue length
+  - [x] counter load
+- [x] Historical dashboard:
+  - [x] filter range tanggal/branch/service/priority/channel
+  - [x] export CSV
 
 ## Enterprise
 - [ ] Scheduled reports via email
 - [ ] BI connectors (API tokenized)
-- [ ] Anomaly detection rules (threshold-based)
+- [x] Anomaly detection rules (threshold-based)
 
 ---
 
@@ -310,7 +310,7 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
   - [ ] db migration gating
 
 ### 4.2 API documentation
-- [ ] OpenAPI spec untuk semua services public
+- [x] OpenAPI spec untuk semua services public
 - [ ] Postman/Insomnia collection (optional)
 - [ ] Webhook docs + signature verification contoh
 
@@ -326,8 +326,8 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 ### 4.4 Release readiness
 - [ ] UAT checklist + sign-off template
 - [ ] Runbooks:
-  - [ ] incident triage
-  - [ ] restore backup
+  - [x] incident triage
+  - [x] restore backup
   - [ ] provider notif outage
   - [ ] device offline mass
 - [ ] DR drill evidence (log + report)
