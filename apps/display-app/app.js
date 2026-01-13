@@ -24,6 +24,12 @@ const connectBtn = document.getElementById("connectBtn");
 const callList = document.getElementById("callList");
 const status = document.getElementById("status");
 const playlistEl = document.getElementById("playlist");
+const nowNumber = document.getElementById("nowNumber");
+const nowCounter = document.getElementById("nowCounter");
+const nowTime = document.getElementById("nowTime");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+const connState = document.getElementById("connState");
+const callCount = document.getElementById("callCount");
 
 const maxCalls = 5;
 let configVersion = 0;
@@ -62,6 +68,19 @@ function renderCalls() {
     `;
     callList.appendChild(row);
   });
+  callCount.value = String(state.calls.length);
+}
+
+function renderNow(call) {
+  if (!call) {
+    nowNumber.textContent = "-";
+    nowCounter.textContent = "Counter -";
+    nowTime.textContent = "--:--";
+    return;
+  }
+  nowNumber.textContent = call.ticket_number;
+  nowCounter.textContent = `Counter ${call.counter_id || "-"}`;
+  nowTime.textContent = new Date(call.called_at || call.created_at).toLocaleTimeString();
 }
 
 function sayCall(call) {
@@ -121,6 +140,7 @@ function isQuietHours() {
 }
 function addCall(call) {
   state.calls = [call, ...state.calls.filter((item) => item.ticket_id !== call.ticket_id)].slice(0, maxCalls);
+  renderNow(state.calls[0]);
   renderCalls();
   sayCall(call);
 }
@@ -167,6 +187,7 @@ async function pollEvents() {
   const events = await response.json();
   events.forEach(handleEvent);
   setStatus("Live");
+  connState.value = "Live";
   sendDeviceStatus("online");
 }
 
@@ -188,6 +209,7 @@ function connect() {
   state.calls = [];
   state.lastAfter = "";
   renderCalls();
+  renderNow(null);
   loadSnapshot().catch(() => setStatus("Snapshot failed"));
 
   connectSockJS();
@@ -205,6 +227,7 @@ function connectSockJS() {
   socket = new SockJS(endpoint);
   socket.onopen = () => {
     setStatus("Live");
+    connState.value = "Live";
     sendDeviceStatus("online");
     reconnectDelay = 1000;
     const msg = {
@@ -225,6 +248,7 @@ function connectSockJS() {
   };
   socket.onclose = () => {
     setStatus("Disconnected");
+    connState.value = "Disconnected";
     sendDeviceStatus("offline");
     startPollingFallback();
     scheduleReconnect();
@@ -344,6 +368,16 @@ connectBtn.addEventListener("click", () => {
   connect();
 });
 
+fullscreenBtn.addEventListener("click", () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+    fullscreenBtn.textContent = "Exit Fullscreen";
+  } else {
+    document.exitFullscreen().catch(() => {});
+    fullscreenBtn.textContent = "Fullscreen";
+  }
+});
+
 langSelect.addEventListener("change", () => {
   state.language = langSelect.value;
 });
@@ -354,6 +388,8 @@ audioToggle.addEventListener("change", () => {
 
 renderCalls();
 updatePlaylist();
+renderNow(null);
+connState.value = "Connecting...";
 
 setInterval(() => {
   if (state.queueBase) {

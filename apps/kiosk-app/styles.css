@@ -115,6 +115,36 @@ button[disabled] {
   flex-wrap: wrap;
 }
 
+.status-block {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.status-block span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status-block strong {
+  font-size: 18px;
+}
+
+.config-preview {
+  margin: 16px 0 0;
+  padding: 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  max-height: 180px;
+  overflow: auto;
+}
+
 .toggles {
   margin-top: 16px;
   display: flex;

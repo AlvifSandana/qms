@@ -70,13 +70,43 @@
     </section>
 
     <section class="card">
-      <h2>Latest Calls</h2>
-      <div class="list" id="callList"></div>
+      <h2>Now Calling</h2>
+      <div class="now-card" id="nowCard">
+        <div>
+          <p class="eyebrow">Current</p>
+          <h3 id="nowNumber">-</h3>
+          <p class="muted" id="nowCounter">Counter -</p>
+        </div>
+        <div>
+          <p class="muted" id="nowTime">--:--</p>
+          <button id="fullscreenBtn">Fullscreen</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card split">
+      <div>
+        <h2>Latest Calls</h2>
+        <div class="list" id="callList"></div>
+      </div>
+      <div>
+        <h2>Playlist</h2>
+        <div class="playlist" id="playlist">Welcome to QMS</div>
+      </div>
     </section>
 
     <section class="card">
-      <h2>Playlist</h2>
-      <div class="playlist" id="playlist">Welcome to QMS</div>
+      <h2>System</h2>
+      <div class="grid">
+        <label>
+          Connection
+          <input id="connState" value="Connecting..." disabled />
+        </label>
+        <label>
+          Calls in buffer
+          <input id="callCount" value="0" disabled />
+        </label>
+      </div>
     </section>
   </main>
 

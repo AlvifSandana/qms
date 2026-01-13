@@ -58,11 +58,35 @@
           <select id="serviceSelect"></select>
         </label>
         <button id="loadBtn">Load Services</button>
+        <button id="syncBtn">Sync Now</button>
       </div>
       <div class="toggles">
         <button id="contrastBtn">High Contrast</button>
         <button id="fontBtn">Large Text</button>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>System Status</h2>
+      <div class="grid">
+        <div class="status-block">
+          <span>Connection</span>
+          <strong id="connState">Unknown</strong>
+        </div>
+        <div class="status-block">
+          <span>Offline Queue</span>
+          <strong id="offlineCount">0</strong>
+        </div>
+        <div class="status-block">
+          <span>Config Version</span>
+          <strong id="configVersion">-</strong>
+        </div>
+        <div class="status-block">
+          <span>Last Sync</span>
+          <strong id="lastSync">-</strong>
+        </div>
+      </div>
+      <pre class="config-preview" id="configPreview">{}</pre>
     </section>
 
     <section class="card">

@@ -44,6 +44,10 @@ h1 {
   font-size: 34px;
 }
 
+.muted {
+  color: var(--muted);
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -102,6 +106,25 @@ button {
 .list {
   display: grid;
   gap: 12px;
+}
+
+.now-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0b1220;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.now-card h3 {
+  margin: 8px 0 4px;
+  font-size: 36px;
+}
+
+.now-card button {
+  margin-top: 10px;
 }
 
 .call {

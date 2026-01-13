@@ -14,6 +14,7 @@ const serviceSelect = document.getElementById("serviceSelect");
 const loadBtn = document.getElementById("loadBtn");
 const issueBtn = document.getElementById("issueBtn");
 const printBtn = document.getElementById("printBtn");
+const syncBtn = document.getElementById("syncBtn");
 const ticketPanel = document.getElementById("ticketPanel");
 const status = document.getElementById("status");
 const langSelect = document.getElementById("langSelect");
@@ -24,6 +25,11 @@ const contrastBtn = document.getElementById("contrastBtn");
 const fontBtn = document.getElementById("fontBtn");
 const appointmentInput = document.getElementById("appointmentInput");
 const checkinBtn = document.getElementById("checkinBtn");
+const connState = document.getElementById("connState");
+const offlineCount = document.getElementById("offlineCount");
+const configVersionEl = document.getElementById("configVersion");
+const lastSyncEl = document.getElementById("lastSync");
+const configPreview = document.getElementById("configPreview");
 
 let idleTimer;
 const idleTimeoutMs = 60000;
@@ -40,6 +46,9 @@ const translations = {
     offline: "Offline - tiket lokal",
     noTicket: "Belum ada tiket",
     printFailed: "Cetak gagal, gunakan QR di layar",
+    syncOk: "Sinkron berhasil",
+    syncFail: "Sinkron gagal",
+    checkinFail: "Check-in gagal",
   },
   en: {
     ready: "Ready",
@@ -52,6 +61,9 @@ const translations = {
     offline: "Offline - local ticket",
     noTicket: "No ticket issued yet",
     printFailed: "Print failed, use on-screen QR",
+    syncOk: "Sync complete",
+    syncFail: "Sync failed",
+    checkinFail: "Check-in failed",
   },
 };
 
@@ -59,6 +71,19 @@ let configVersion = 0;
 
 function setStatus(text) {
   status.textContent = text;
+}
+
+function setConnState(text) {
+  connState.textContent = text;
+}
+
+function updateOfflineCount() {
+  const stored = JSON.parse(localStorage.getItem("offlineTickets") || "[]");
+  offlineCount.textContent = stored.length;
+}
+
+function updateConfigPreview(payload) {
+  configPreview.textContent = JSON.stringify(payload || {}, null, 2);
 }
 
 function t(key) {
@@ -199,7 +224,7 @@ async function checkInAppointment() {
     renderTicket(ticket);
     setStatus(`Checked in ${ticket.ticket_number}`);
   } catch (err) {
-    setStatus("Check-in failed");
+    setStatus(t("checkinFail"));
   }
 }
 
@@ -207,6 +232,7 @@ function queueOfflineTicket(payload) {
   const stored = JSON.parse(localStorage.getItem("offlineTickets") || "[]");
   stored.push(payload);
   localStorage.setItem("offlineTickets", JSON.stringify(stored));
+  updateOfflineCount();
 }
 
 async function syncOfflineTickets() {
@@ -230,6 +256,7 @@ async function syncOfflineTickets() {
     }
   }
   localStorage.setItem("offlineTickets", JSON.stringify(remaining));
+  updateOfflineCount();
 }
 
 async function healthCheck() {
@@ -239,10 +266,13 @@ async function healthCheck() {
       throw new Error("offline");
     }
     setStatus(t("ready"));
+    setConnState("Online");
     await syncOfflineTickets();
+    lastSyncEl.textContent = new Date().toLocaleTimeString();
     sendDeviceStatus("online");
   } catch (err) {
     setStatus(t("offline"));
+    setConnState("Offline");
     sendDeviceStatus("offline");
   }
 }
@@ -280,6 +310,8 @@ async function fetchDeviceConfig() {
     return;
   }
   configVersion = data.version || configVersion;
+  configVersionEl.textContent = String(configVersion);
+  updateConfigPreview(data.payload || {});
   applyConfig(data.payload || {});
 }
 
@@ -313,6 +345,12 @@ function applyConfig(payload) {
 
 loadBtn.addEventListener("click", () => {
   loadServices().catch(() => setStatus(t("loadFailed")));
+});
+
+syncBtn.addEventListener("click", () => {
+  healthCheck()
+    .then(() => setStatus(t("syncOk")))
+    .catch(() => setStatus(t("syncFail")));
 });
 
 issueBtn.addEventListener("click", () => {
@@ -365,3 +403,4 @@ setInterval(() => {
 
 renderTicket(null);
 resetIdle();
+updateOfflineCount();
