@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QMS Analytics</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">QMS Analytics</p>
+        <h1>Service Health, in one view.</h1>
+        <p class="subtitle">Track wait times, queue load, anomalies, and scheduled reports.</p>
+      </div>
+      <div class="badge" id="status">Idle</div>
+    </header>
+
+    <section class="alert" id="alert" hidden></section>
+
+    <section class="card">
+      <h2>Query Scope</h2>
+      <div class="grid">
+        <label>
+          Analytics Base URL
+          <input id="analyticsBase" value="http://localhost:8084" />
+        </label>
+        <label>
+          Tenant ID
+          <input id="tenantId" placeholder="UUID" />
+        </label>
+        <label>
+          Branch ID
+          <input id="branchId" placeholder="UUID" />
+        </label>
+        <label>
+          Service ID
+          <input id="serviceId" placeholder="UUID" />
+        </label>
+        <label>
+          From
+          <input id="fromDate" type="datetime-local" />
+        </label>
+        <label>
+          To
+          <input id="toDate" type="datetime-local" />
+        </label>
+        <button id="refreshBtn">Refresh</button>
+        <button id="toggleAuto" class="ghost">Auto Refresh: Off</button>
+        <button id="exportBtn">Export CSV</button>
+      </div>
+      <div class="actions">
+        <button data-range="1">Last 1h</button>
+        <button data-range="6">Last 6h</button>
+        <button data-range="24">Last 24h</button>
+        <button data-range="168">Last 7d</button>
+      </div>
+    </section>
+
+    <section class="card split">
+      <div>
+        <h2>KPI Snapshot</h2>
+        <div class="kpi-grid">
+          <div class="kpi">
+            <p>Avg Wait</p>
+            <strong id="avgWait">-</strong>
+          </div>
+          <div class="kpi">
+            <p>Avg Service</p>
+            <strong id="avgService">-</strong>
+          </div>
+          <div class="kpi">
+            <p>Total Tickets</p>
+            <strong id="totalCount">-</strong>
+          </div>
+        </div>
+      </div>
+      <div>
+        <h2>Realtime Queue</h2>
+        <div class="kpi-grid">
+          <div class="kpi alt">
+            <p>Queue Length</p>
+            <strong id="queueLength">-</strong>
+          </div>
+          <div class="kpi alt">
+            <p>Serving</p>
+            <strong id="servingCount">-</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card split">
+      <div>
+        <h2>Scheduled Reports</h2>
+        <div class="grid">
+          <label>
+            Cron
+            <input id="reportCron" placeholder="0 9 * * *" />
+          </label>
+          <label>
+            Channel
+            <select id="reportChannel">
+              <option value="email">email</option>
+              <option value="sms">sms</option>
+              <option value="whatsapp">whatsapp</option>
+            </select>
+          </label>
+          <label>
+            Recipient
+            <input id="reportRecipient" placeholder="ops@example.com" />
+          </label>
+          <button id="createReport">Create Report</button>
+        </div>
+        <div class="list" id="reportList"></div>
+      </div>
+      <div>
+        <h2>Anomalies</h2>
+        <div class="list" id="anomalyList"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
