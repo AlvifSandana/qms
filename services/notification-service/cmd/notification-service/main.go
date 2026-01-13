@@ -32,6 +32,7 @@ func main() {
 		EmailProvider: cfg.EmailProvider,
 		WAProvider: cfg.WAProvider,
 		PushProvider: cfg.PushProvider,
+		ReminderThreshold: cfg.ReminderThreshold,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

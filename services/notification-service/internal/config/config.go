@@ -16,6 +16,7 @@ type Config struct {
 	EmailProvider  string
 	WAProvider     string
 	PushProvider   string
+	ReminderThreshold int
 }
 
 func Load() Config {
@@ -34,6 +35,7 @@ func Load() Config {
 		EmailProvider: os.Getenv("NOTIF_EMAIL_PROVIDER"),
 		WAProvider:    os.Getenv("NOTIF_WA_PROVIDER"),
 		PushProvider:  os.Getenv("NOTIF_PUSH_PROVIDER"),
+		ReminderThreshold: readInt("NOTIF_REMINDER_THRESHOLD", 3),
 	}
 }
 

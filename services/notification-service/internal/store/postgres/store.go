@@ -107,6 +107,27 @@ func (s *Store) GetTemplate(ctx context.Context, tenantID, templateID, lang, cha
 	return body, nil
 }
 
+func (s *Store) GetQueuePosition(ctx context.Context, tenantID, branchID, serviceID, ticketID string) (int, error) {
+	var position int
+	row := s.pool.QueryRow(ctx, `
+		WITH ordered AS (
+			SELECT ticket_id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS pos
+			FROM tickets
+			WHERE tenant_id = $1 AND branch_id = $2 AND service_id = $3 AND status = 'waiting'
+		)
+		SELECT pos
+		FROM ordered
+		WHERE ticket_id = $4
+	`, tenantID, branchID, serviceID, ticketID)
+	if err := row.Scan(&position); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return position, nil
+}
+
 func (s *Store) InsertNotification(ctx context.Context, notification store.Notification) error {
 	if notification.NotificationID == "" {
 		notification.NotificationID = uuid.NewString()

@@ -3,7 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -17,10 +17,11 @@ type Worker struct {
 	store       store.Store
 	batchSize   int
 	maxAttempts int
-	smsProvider string
-	emailProvider string
-	waProvider string
-	pushProvider string
+	reminderThreshold int
+	smsProvider Provider
+	emailProvider Provider
+	waProvider Provider
+	pushProvider Provider
 }
 
 type payloadData map[string]interface{}
@@ -32,6 +33,7 @@ type Config struct {
 	EmailProvider string
 	WAProvider string
 	PushProvider string
+	ReminderThreshold int
 }
 
 func New(store store.Store, cfg Config) *Worker {
@@ -43,14 +45,19 @@ func New(store store.Store, cfg Config) *Worker {
 	if maxAttempts <= 0 {
 		maxAttempts = 3
 	}
+	threshold := cfg.ReminderThreshold
+	if threshold <= 0 {
+		threshold = 3
+	}
 	return &Worker{
 		store: store,
 		batchSize: batch,
 		maxAttempts: maxAttempts,
-		smsProvider: cfg.SMSProvider,
-		emailProvider: cfg.EmailProvider,
-		waProvider: cfg.WAProvider,
-		pushProvider: cfg.PushProvider,
+		reminderThreshold: threshold,
+		smsProvider: newProvider(cfg.SMSProvider, "sms"),
+		emailProvider: newProvider(cfg.EmailProvider, "email"),
+		waProvider: newProvider(cfg.WAProvider, "whatsapp"),
+		pushProvider: newProvider(cfg.PushProvider, "push"),
 	}
 }
 
@@ -103,6 +110,19 @@ func (w *Worker) processEvent(ctx context.Context, event store.OutboxEvent) erro
 		return nil
 	}
 
+	if err := w.sendNotifications(ctx, event.TenantID, templateID, payload); err != nil {
+		return err
+	}
+
+	if event.Type == "ticket.created" {
+		if err := w.maybeSendReminder(ctx, event.TenantID, payload); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Worker) sendNotifications(ctx context.Context, tenantID, templateID string, payload payloadData) error {
 	channels := pickChannels(payload)
 	if len(channels) == 0 {
 		return nil
@@ -115,7 +135,7 @@ func (w *Worker) processEvent(ctx context.Context, event store.OutboxEvent) erro
 		}
 
 		lang := "id"
-		body, err := w.store.GetTemplate(ctx, event.TenantID, templateID, lang, channel.name)
+		body, err := w.store.GetTemplate(ctx, tenantID, templateID, lang, channel.name)
 		if err != nil {
 			return err
 		}
@@ -126,7 +146,7 @@ func (w *Worker) processEvent(ctx context.Context, event store.OutboxEvent) erro
 
 		notification := store.Notification{
 			NotificationID: uuid.NewString(),
-			TenantID:  event.TenantID,
+			TenantID:  tenantID,
 			Channel:   channel.name,
 			Recipient: recipient,
 			Status:    "pending",
@@ -142,6 +162,28 @@ func (w *Worker) processEvent(ctx context.Context, event store.OutboxEvent) erro
 		}
 	}
 	return nil
+}
+
+func (w *Worker) maybeSendReminder(ctx context.Context, tenantID string, payload payloadData) error {
+	ticketID := str(payload, "ticket_id")
+	branchID := str(payload, "branch_id")
+	serviceID := str(payload, "service_id")
+	if ticketID == "" || branchID == "" || serviceID == "" {
+		return nil
+	}
+	position, err := w.store.GetQueuePosition(ctx, tenantID, branchID, serviceID, ticketID)
+	if err != nil {
+		return err
+	}
+	if position <= 0 {
+		return nil
+	}
+	ahead := position - 1
+	if ahead > w.reminderThreshold {
+		return nil
+	}
+	payload["queue_position"] = fmt.Sprint(ahead)
+	return w.sendNotifications(ctx, tenantID, "ticket_reminder", payload)
 }
 
 func (w *Worker) processRetries(ctx context.Context) error {
@@ -167,7 +209,8 @@ func (w *Worker) deliverNotification(ctx context.Context, notification store.Not
 		}
 		return nil
 	}
-	providerErr := w.send(notification.Channel, notification.Message, notification.Recipient)
+	provider := w.providerFor(notification.Channel)
+	providerErr := provider.Send(ctx, notification.Message, notification.Recipient)
 	if providerErr != nil {
 		nextAttempts := notification.Attempts + 1
 		if nextAttempts >= w.maxAttempts {
@@ -226,6 +269,8 @@ func defaultTemplate(templateID, lang string) string {
 			return "Ticket {ticket_number} called."
 		case "ticket_recalled":
 			return "Ticket {ticket_number} recalled."
+		case "ticket_reminder":
+			return "Ticket {ticket_number}: {queue_position} ahead."
 		}
 	}
 	switch templateID {
@@ -235,6 +280,8 @@ func defaultTemplate(templateID, lang string) string {
 		return "Tiket {ticket_number} dipanggil."
 	case "ticket_recalled":
 		return "Tiket {ticket_number} dipanggil ulang."
+	case "ticket_reminder":
+		return "Tiket {ticket_number}: {queue_position} nomor lagi."
 	}
 	return ""
 }
@@ -245,6 +292,7 @@ func renderTemplate(template string, payload payloadData) string {
 	result = strings.ReplaceAll(result, "{branch_id}", str(payload, "branch_id"))
 	result = strings.ReplaceAll(result, "{service_id}", str(payload, "service_id"))
 	result = strings.ReplaceAll(result, "{counter_id}", str(payload, "counter_id"))
+	result = strings.ReplaceAll(result, "{queue_position}", optionalStr(payload, "queue_position"))
 	return result
 }
 
@@ -255,6 +303,16 @@ func str(payload payloadData, key string) string {
 		}
 	}
 	log.Printf("notif missing variable: %s", key)
+	return ""
+}
+
+func optionalStr(payload payloadData, key string) string {
+	if value, ok := payload[key]; ok {
+		if text, ok := value.(string); ok {
+			return text
+		}
+		return fmt.Sprint(value)
+	}
 	return ""
 }
 
@@ -290,23 +348,19 @@ func pickChannels(payload payloadData) []channelTarget {
 	return channels
 }
 
-func (w *Worker) send(channel, message, recipient string) error {
-	provider := ""
+func (w *Worker) providerFor(channel string) Provider {
 	switch channel {
 	case "sms":
-		provider = w.smsProvider
+		return w.smsProvider
 	case "email":
-		provider = w.emailProvider
+		return w.emailProvider
 	case "whatsapp":
-		provider = w.waProvider
+		return w.waProvider
 	case "push":
-		provider = w.pushProvider
+		return w.pushProvider
+	default:
+		return w.smsProvider
 	}
-	if strings.Contains(recipient, "fail") {
-		return errors.New("provider failure")
-	}
-	log.Printf("send %s via %s to %s: %s", channel, provider, recipient, message)
-	return nil
 }
 
 func Start(ctx context.Context, interval time.Duration, w *Worker) {

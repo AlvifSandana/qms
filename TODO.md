@@ -237,7 +237,7 @@ Target: **Ticketing omnichannel + queue engine + agent app + display + basic not
 - [ ] Trigger pipeline:
   - [ ] ticket created
   - [ ] called
-  - [ ] “X nomor lagi” (rule-based sederhana)
+  - [x] “X nomor lagi” (rule-based sederhana)
 - [ ] Provider adapters:
   - [ ] Email
   - [ ] SMS (pluggable)

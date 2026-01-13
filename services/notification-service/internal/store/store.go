@@ -31,6 +31,7 @@ type Store interface {
 	GetLastOffset(ctx context.Context) (time.Time, error)
 	UpdateOffset(ctx context.Context, value time.Time) error
 	IsNotificationsEnabled(ctx context.Context, tenantID string) (bool, error)
+	GetQueuePosition(ctx context.Context, tenantID, branchID, serviceID, ticketID string) (int, error)
 	GetTemplate(ctx context.Context, tenantID, templateID, lang, channel string) (string, error)
 	InsertNotification(ctx context.Context, notification Notification) error
 	ListDueNotifications(ctx context.Context, limit int) ([]Notification, error)
