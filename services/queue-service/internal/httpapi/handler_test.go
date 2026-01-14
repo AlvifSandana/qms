@@ -34,6 +34,8 @@ type fakeStore struct {
 	servicesFn      func(ctx context.Context, tenantID, branchID string) ([]models.Service, error)
 	activeFn        func(ctx context.Context, tenantID, branchID, counterID string) (models.Ticket, bool, error)
 	apptFn          func(ctx context.Context, requestID, tenantID, branchID, appointmentID string) (models.Ticket, error)
+	sessionFn       func(ctx context.Context, sessionID string) (store.Session, error)
+	accessFn        func(ctx context.Context, userID string) ([]string, []string, error)
 }
 
 func (f fakeStore) CreateTicket(ctx context.Context, input store.CreateTicketInput) (models.Ticket, bool, error) {
@@ -174,6 +176,112 @@ func (f fakeStore) CheckInAppointment(ctx context.Context, requestID, tenantID, 
 		return models.Ticket{}, nil
 	}
 	return f.apptFn(ctx, requestID, tenantID, branchID, appointmentID)
+}
+
+func (f fakeStore) GetSession(ctx context.Context, sessionID string) (store.Session, error) {
+	if f.sessionFn == nil {
+		return store.Session{}, store.ErrSessionNotFound
+	}
+	return f.sessionFn(ctx, sessionID)
+}
+
+func (f fakeStore) GetAccess(ctx context.Context, userID string) ([]string, []string, error) {
+	if f.accessFn == nil {
+		return nil, nil, nil
+	}
+	return f.accessFn(ctx, userID)
+}
+
+func TestAuthMiddlewareRejectsMissingSession(t *testing.T) {
+	handler := NewHandler(fakeStore{}, Options{})
+	req := httptest.NewRequest(http.MethodGet, "/api/queues?tenant_id=11111111-1111-1111-1111-111111111111&branch_id=22222222-2222-2222-2222-222222222222", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestAuthMiddlewareAllowsPublicCreateTicket(t *testing.T) {
+	store := fakeStore{
+		createFn: func(ctx context.Context, input store.CreateTicketInput) (models.Ticket, bool, error) {
+			return models.Ticket{TicketID: "ticket-1", TicketNumber: "A001"}, false, nil
+		},
+	}
+	handler := NewHandler(store, Options{})
+	payload := map[string]string{
+		"request_id": "11111111-1111-1111-1111-111111111111",
+		"tenant_id":  "22222222-2222-2222-2222-222222222222",
+		"branch_id":  "33333333-3333-3333-3333-333333333333",
+		"service_id": "44444444-4444-4444-4444-444444444444",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/tickets", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestAuthMiddlewareEnforcesBranchAccess(t *testing.T) {
+	store := fakeStore{
+		sessionFn: func(ctx context.Context, sessionID string) (store.Session, error) {
+			return store.Session{SessionID: sessionID, UserID: "user-1", TenantID: "11111111-1111-1111-1111-111111111111"}, nil
+		},
+		accessFn: func(ctx context.Context, userID string) ([]string, []string, error) {
+			return []string{"22222222-2222-2222-2222-222222222222"}, nil, nil
+		},
+	}
+	handler := NewHandler(store, Options{})
+	req := httptest.NewRequest(http.MethodGet, "/api/queues?tenant_id=11111111-1111-1111-1111-111111111111&branch_id=33333333-3333-3333-3333-333333333333", nil)
+	req.Header.Set("Authorization", "Bearer session-1")
+	recorder := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, recorder.Code)
+	}
+}
+
+func TestAuthMiddlewareEnforcesServiceAccess(t *testing.T) {
+	store := fakeStore{
+		sessionFn: func(ctx context.Context, sessionID string) (store.Session, error) {
+			return store.Session{SessionID: sessionID, UserID: "user-1", TenantID: "11111111-1111-1111-1111-111111111111"}, nil
+		},
+		accessFn: func(ctx context.Context, userID string) ([]string, []string, error) {
+			return []string{"22222222-2222-2222-2222-222222222222"}, []string{"55555555-5555-5555-5555-555555555555"}, nil
+		},
+	}
+	handler := NewHandler(store, Options{})
+	payload := map[string]string{
+		"request_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		"tenant_id":  "11111111-1111-1111-1111-111111111111",
+		"branch_id":  "22222222-2222-2222-2222-222222222222",
+		"service_id": "66666666-6666-6666-6666-666666666666",
+		"counter_id": "77777777-7777-7777-7777-777777777777",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/tickets/actions/call-next", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer session-1")
+	recorder := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, recorder.Code)
+	}
 }
 
 func TestCreateTicketSuccess(t *testing.T) {

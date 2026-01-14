@@ -29,6 +29,9 @@ Primary design goals:
 - API style: REST + WebSocket (SockJS)
 - Job processing: background worker inside the same service (can be split later)
 
+Implementation note:
+- Repo saat ini memakai **multi-service** (queue/auth/admin/notification/analytics/realtime) dengan kontrak yang sama, sambil menjaga opsi deploy monolith di tahap berikutnya.
+
 ### Data
 - DB: **PostgreSQL**
 - Optional cache: Redis (phase 2 if needed for rate limit/locks)

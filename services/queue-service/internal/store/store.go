@@ -62,6 +62,16 @@ type TicketStore interface {
 	UpdateCounterStatus(ctx context.Context, tenantID, branchID, counterID, status string) error
 	ListServices(ctx context.Context, tenantID, branchID string) ([]models.Service, error)
 	CheckInAppointment(ctx context.Context, requestID, tenantID, branchID, appointmentID string) (models.Ticket, error)
+	GetSession(ctx context.Context, sessionID string) (Session, error)
+	GetAccess(ctx context.Context, userID string) ([]string, []string, error)
+}
+
+type Session struct {
+	SessionID string
+	UserID    string
+	TenantID  string
+	Role      string
+	ExpiresAt time.Time
 }
 
 type OutboxEvent struct {

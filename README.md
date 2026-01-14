@@ -17,6 +17,8 @@ Omnichannel **Queue Management System (QMS)** untuk **bank/klinik/layanan publik
 - **Edge**: Caddy
 - **Deploy**: Docker Compose (cloud VPS / on-prem mini PC)
 
+Implementasi repo saat ini memakai **multi-service** (queue/auth/admin/notification/analytics/realtime) agar modul terpisah sejak awal, namun kontrak mengikuti specs monolith.
+
 ## Dokumentasi
 - PRD: `docs/PRD_Omnichannel_QMS.md`
 - Backlog epics/stories/AC: `docs/QMS_Backlog_Epics_UserStories_AcceptanceTests.md`
@@ -39,15 +41,16 @@ Omnichannel **Queue Management System (QMS)** untuk **bank/klinik/layanan publik
 ```bash
 docker compose -f infra/docker/compose.yml up -d
 ```
+> Compose sekarang build image dari `services/*/Dockerfile` untuk setiap service.
 
 ### 3) Open apps (default)
 > Sesuaikan port dengan `infra/docker/compose.yml`
 
 - Admin: `https://localhost/admin`
-- Agent: `apps/agent-web/index.html` (static prototype)
+- Agent: `apps/agent-web/index.html` (static prototype, set `Queue Base` + `Realtime Base`, needs session token)
 - Kiosk: `apps/kiosk-app/index.html`
-- Display: `apps/display-app/index.html`
-- Public web: `https://localhost/` (optional)
+- Display: `apps/display-app/index.html` (set `Queue Base` + `Realtime Base`, needs session token)
+- Public web: `https://localhost/` (optional, tracking requires session token)
 
 ### 4) Health checks
 - API health: `GET /healthz`

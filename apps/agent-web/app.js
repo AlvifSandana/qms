@@ -6,6 +6,7 @@ const state = {
   role: "",
   authBase: "http://localhost:8081",
   queueBase: "http://localhost:8080",
+  realtimeBase: "http://localhost:8085",
   tenantId: "",
   branchId: "",
   serviceId: "",
@@ -14,6 +15,7 @@ const state = {
 
 const authBaseInput = document.getElementById("authBase");
 const queueBaseInput = document.getElementById("queueBase");
+const realtimeBaseInput = document.getElementById("realtimeBase");
 const tenantIdInput = document.getElementById("tenantId");
 const emailInput = document.getElementById("email");
 const passwordInput = document.getElementById("password");
@@ -163,7 +165,7 @@ function setRoleGate(role) {
   const allowed = role === "agent" || role === "supervisor";
   loginHint.textContent = allowed ? "" : "Role not permitted for agent console.";
   document.querySelectorAll("button, select, input").forEach((el) => {
-    if (el.id === "authBase" || el.id === "queueBase" || el.id === "tenantId" || el.id === "email" || el.id === "password" || el.id === "loginBtn") {
+    if (el.id === "authBase" || el.id === "queueBase" || el.id === "realtimeBase" || el.id === "tenantId" || el.id === "email" || el.id === "password" || el.id === "loginBtn") {
       return;
     }
     el.disabled = !allowed;
@@ -179,6 +181,14 @@ function uuidv4() {
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   return [...bytes].map((b, i) => (i === 4 || i === 6 || i === 8 || i === 10 ? "-" : "") + b.toString(16).padStart(2, "0")).join("");
+}
+
+function authHeaders(extra = {}) {
+  const headers = { ...extra };
+  if (state.sessionId) {
+    headers.Authorization = `Bearer ${state.sessionId}`;
+  }
+  return headers;
 }
 
 function updateServiceSelect(services) {
@@ -213,6 +223,7 @@ async function login() {
   setAlert("");
   state.authBase = authBaseInput.value.trim();
   state.queueBase = queueBaseInput.value.trim();
+  state.realtimeBase = realtimeBaseInput.value.trim();
   state.tenantId = tenantIdInput.value.trim();
 
   const payload = {
@@ -258,7 +269,9 @@ async function loadServices() {
   }
   state.branchId = branchId;
 
-  const response = await fetch(`${state.queueBase}/api/services?tenant_id=${state.tenantId}&branch_id=${branchId}`);
+  const response = await fetch(`${state.queueBase}/api/services?tenant_id=${state.tenantId}&branch_id=${branchId}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) {
     setStatus("Failed to load services");
     return;
@@ -274,7 +287,9 @@ async function loadCounters() {
   if (!branchId) {
     return;
   }
-  const response = await fetch(`${state.queueBase}/api/counters?tenant_id=${state.tenantId}&branch_id=${branchId}`);
+  const response = await fetch(`${state.queueBase}/api/counters?tenant_id=${state.tenantId}&branch_id=${branchId}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) {
     setStatus("Failed to load counters");
     return;
@@ -301,7 +316,9 @@ async function refreshQueue() {
     return;
   }
   state.serviceId = serviceId;
-  const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${serviceId}`);
+  const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${serviceId}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) {
     setStatus("Failed to load queue");
     return;
@@ -331,7 +348,7 @@ async function refreshQueue() {
 }
 
 function connectRealtime() {
-  if (!state.queueBase || !state.tenantId) {
+  if (!state.realtimeBase || !state.tenantId || !state.sessionId) {
     return;
   }
   if (reconnectTimer) {
@@ -341,7 +358,8 @@ function connectRealtime() {
   if (socket) {
     socket.close();
   }
-  socket = new SockJS(`${state.queueBase}/realtime`);
+  const sessionParam = encodeURIComponent(state.sessionId);
+  socket = new SockJS(`${state.realtimeBase}/realtime?session_id=${sessionParam}`);
   socket.onopen = () => {
     reconnectDelay = 1000;
     const msg = {
@@ -445,7 +463,9 @@ async function loadActiveTicket() {
     return;
   }
   state.branchId = branchId;
-  const response = await fetch(`${state.queueBase}/api/tickets/active?tenant_id=${state.tenantId}&branch_id=${branchId}&counter_id=${counterId}`);
+  const response = await fetch(`${state.queueBase}/api/tickets/active?tenant_id=${state.tenantId}&branch_id=${branchId}&counter_id=${counterId}`, {
+    headers: authHeaders(),
+  });
   if (response.status === 204) {
     renderActive(null);
     return;
@@ -482,7 +502,7 @@ async function performAction(action) {
   };
   const response = await trackAction(action, { counterId, ticketId }, () => fetch(`${state.queueBase}/api/tickets/${ticketId}/actions/${action}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   }));
   if (!response.ok) {
@@ -516,7 +536,7 @@ async function transferTicket() {
 
   const response = await trackAction("transfer", { counterId, ticketId }, () => fetch(`${state.queueBase}/api/tickets/${ticketId}/actions/transfer`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   }));
 
@@ -548,7 +568,7 @@ async function callNext() {
   };
   const response = await trackAction("call_next", { counterId }, () => fetch(`${state.queueBase}/api/tickets/actions/call-next`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   }));
 
@@ -617,7 +637,7 @@ async function savePresence() {
   };
   const response = await fetch(`${state.queueBase}/api/counters/${counterId}/status`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
@@ -650,7 +670,9 @@ async function loadSupervisorPanel() {
     return;
   }
   for (const counter of availableCounters) {
-    const response = await fetch(`${state.queueBase}/api/tickets/active?tenant_id=${state.tenantId}&branch_id=${branchId}&counter_id=${counter.counter_id}`);
+    const response = await fetch(`${state.queueBase}/api/tickets/active?tenant_id=${state.tenantId}&branch_id=${branchId}&counter_id=${counter.counter_id}`, {
+      headers: authHeaders(),
+    });
     let activeLabel = "No active ticket";
     if (response.ok && response.status !== 204) {
       const ticket = await response.json();

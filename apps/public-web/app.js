@@ -1,5 +1,6 @@
 const queueBaseInput = document.getElementById("queueBase");
 const realtimeBaseInput = document.getElementById("realtimeBase");
+const sessionIdInput = document.getElementById("sessionId");
 const tenantIdInput = document.getElementById("tenantId");
 const branchIdInput = document.getElementById("branchId");
 const serviceSelect = document.getElementById("serviceSelect");
@@ -17,6 +18,7 @@ const timeline = document.getElementById("timeline");
 const state = {
   queueBase: "http://localhost:8080",
   realtimeBase: "http://localhost:8085",
+  sessionId: "",
   tenantId: "",
   branchId: "",
   serviceId: "",
@@ -66,6 +68,7 @@ function uuidv4() {
 async function loadServices() {
   state.queueBase = queueBaseInput.value.trim();
   state.realtimeBase = realtimeBaseInput.value.trim();
+  state.sessionId = sessionIdInput.value.trim();
   state.tenantId = tenantIdInput.value.trim();
   state.branchId = branchIdInput.value.trim();
   if (!state.queueBase || !state.tenantId || !state.branchId) {
@@ -94,11 +97,25 @@ function renderTicket() {
   `;
 }
 
+function authHeaders(extra = {}) {
+  const headers = { ...extra };
+  if (state.sessionId) {
+    headers.Authorization = `Bearer ${state.sessionId}`;
+  }
+  return headers;
+}
+
 async function updatePosition() {
   if (!state.serviceId || !state.branchId || !state.tenantId) {
     return;
   }
-  const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${state.serviceId}`);
+  if (!state.sessionId) {
+    setHint("Session required to track position.");
+    return;
+  }
+  const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${state.serviceId}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) {
     return;
   }
@@ -153,8 +170,14 @@ async function pollEvents() {
   if (!state.tenantId || !state.ticketId) {
     return;
   }
+  if (!state.sessionId) {
+    setHint("Session required to track updates.");
+    return;
+  }
   const afterParam = state.lastAfter ? `&after=${encodeURIComponent(state.lastAfter)}` : "";
-  const response = await fetch(`${state.queueBase}/api/events?tenant_id=${state.tenantId}${afterParam}&limit=100`);
+  const response = await fetch(`${state.queueBase}/api/events?tenant_id=${state.tenantId}${afterParam}&limit=100`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) {
     setStatus("Offline");
     return;
@@ -190,11 +213,15 @@ function connectRealtime() {
   if (!state.realtimeBase || !state.tenantId) {
     return;
   }
+  if (!state.sessionId) {
+    return;
+  }
   if (state.socket) {
     state.socket.close();
     state.socket = null;
   }
-  const endpoint = `${state.realtimeBase}/realtime`;
+  const sessionParam = encodeURIComponent(state.sessionId);
+  const endpoint = `${state.realtimeBase}/realtime?session_id=${sessionParam}`;
   const socket = new SockJS(endpoint);
   state.socket = socket;
   socket.onopen = () => {
@@ -246,6 +273,10 @@ function startPolling() {
   if (state.poller) {
     clearInterval(state.poller);
   }
+  if (!state.sessionId) {
+    setHint("Session required for realtime tracking.");
+    return;
+  }
   state.poller = setInterval(() => {
     pollEvents().catch(() => setStatus("Offline"));
   }, 5000);
@@ -260,6 +291,7 @@ function startPolling() {
 async function joinQueue() {
   state.queueBase = queueBaseInput.value.trim();
   state.realtimeBase = realtimeBaseInput.value.trim();
+  state.sessionId = sessionIdInput.value.trim();
   state.tenantId = tenantIdInput.value.trim();
   state.branchId = branchIdInput.value.trim();
   state.serviceId = serviceSelect.value;
@@ -304,6 +336,7 @@ async function joinQueue() {
 function trackTicket() {
   state.queueBase = queueBaseInput.value.trim();
   state.realtimeBase = realtimeBaseInput.value.trim();
+  state.sessionId = sessionIdInput.value.trim();
   state.tenantId = tenantIdInput.value.trim();
   state.branchId = branchIdInput.value.trim();
   state.serviceId = trackServiceId.value.trim();

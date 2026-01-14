@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -30,6 +31,8 @@ type eventEnvelope struct {
 	Payload   json.RawMessage `json:"payload"`
 	CreatedAt time.Time       `json:"created_at"`
 }
+
+const zeroUUID = "00000000-0000-0000-0000-000000000000"
 
 func main() {
 	cfg := config.Load()
@@ -63,6 +66,23 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 	sockjsHandler := sockjs.NewHandler("/realtime", sockjs.DefaultOptions, func(session sockjs.Session) {
+		req := session.Request()
+		sessionID := sessionIDFromRequest(req)
+		if sessionID == "" {
+			_ = session.Close(4001, "missing session")
+			return
+		}
+		authSession, err := store.GetSession(context.Background(), sessionID)
+		if err != nil {
+			_ = session.Close(4002, "invalid session")
+			return
+		}
+		branches, services, err := store.GetAccess(context.Background(), authSession.UserID)
+		if err != nil {
+			_ = session.Close(4003, "access lookup failed")
+			return
+		}
+
 		client := &hub.Client{ID: uuid.NewString(), Send: make(chan []byte, 16)}
 		h.Register(client)
 		defer h.Unregister(client)
@@ -83,7 +103,15 @@ func main() {
 				if parsed.Action == "unsubscribe" {
 					h.UpdateSubscription(client, hub.Subscription{})
 				} else {
-					h.UpdateSubscription(client, hub.Subscription{TenantID: parsed.TenantID, BranchID: parsed.BranchID, ServiceID: parsed.ServiceID})
+					if !isAllowed(parsed.BranchID, parsed.ServiceID, branches, services) {
+						_ = session.Close(4003, "access denied")
+						return
+					}
+					h.UpdateSubscription(client, hub.Subscription{
+						TenantID:  authSession.TenantID,
+						BranchID:  parsed.BranchID,
+						ServiceID: parsed.ServiceID,
+					})
 				}
 				continue
 			}
@@ -100,7 +128,16 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	var last time.Time
+	offset, err := store.GetOffset(context.Background())
+	if err != nil {
+		log.Printf("load offset error: %v", err)
+	}
+	if offset.LastEventTime.IsZero() {
+		offset.LastEventTime = time.Unix(0, 0).UTC()
+	}
+	if offset.LastEventID == "" {
+		offset.LastEventID = zeroUUID
+	}
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = time.Second
 	}
@@ -121,16 +158,36 @@ func main() {
 				continue
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			events, err := store.ListOutboxEvents(ctx, last, cfg.BatchSize)
+			events, err := store.ListOutboxEvents(ctx, offset, cfg.BatchSize)
 			cancel()
 			if err == nil {
 				for _, event := range events {
-					last = event.CreatedAt
+					offset.LastEventTime = event.CreatedAt
+					offset.LastEventID = event.EventID
 					meta := extractMeta(event.Payload)
 					meta.TenantID = event.TenantID
 					env := eventEnvelope{Type: event.Type, Payload: event.Payload, CreatedAt: event.CreatedAt}
 					payload, _ := json.Marshal(env)
 					h.Broadcast(payload, meta)
+				}
+				if len(events) > 0 {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					if err := store.UpdateOffset(ctx, offset); err != nil {
+						log.Printf("update offset error: %v", err)
+					}
+					notifyOffset, err := store.GetNotificationOffset(ctx)
+					if err != nil {
+						log.Printf("notification offset error: %v", err)
+					} else if !notifyOffset.IsZero() {
+						cleanupBefore := offset.LastEventTime
+						if !notifyOffset.IsZero() && notifyOffset.Before(cleanupBefore) {
+							cleanupBefore = notifyOffset
+						}
+						if err := store.CleanupOutbox(ctx, cleanupBefore); err != nil {
+							log.Printf("cleanup outbox error: %v", err)
+						}
+					}
+					cancel()
 				}
 			}
 			atomic.StoreInt32(&running, 0)
@@ -168,4 +225,51 @@ func str(value interface{}) string {
 		return v
 	}
 	return fmt.Sprint(value)
+}
+
+func sessionIDFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if token := bearerToken(r.Header.Get("Authorization")); token != "" {
+		return token
+	}
+	return strings.TrimSpace(r.URL.Query().Get("session_id"))
+}
+
+func bearerToken(header string) string {
+	if header == "" {
+		return ""
+	}
+	parts := strings.Fields(header)
+	if len(parts) != 2 {
+		return ""
+	}
+	if strings.ToLower(parts[0]) != "bearer" {
+		return ""
+	}
+	return parts[1]
+}
+
+func isAllowed(branchID, serviceID string, branches, services []string) bool {
+	if len(branches) > 0 {
+		if branchID == "" || !contains(branches, branchID) {
+			return false
+		}
+	}
+	if len(services) > 0 {
+		if serviceID == "" || !contains(services, serviceID) {
+			return false
+		}
+	}
+	return true
+}
+
+func contains(values []string, value string) bool {
+	for _, item := range values {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }

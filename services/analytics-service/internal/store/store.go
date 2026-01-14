@@ -38,6 +38,15 @@ type Store interface {
 	ListAnomalies(ctx context.Context, tenantID string) ([]Anomaly, error)
 	InsertAnomaly(ctx context.Context, anomaly Anomaly) error
 	ListServices(ctx context.Context) ([]ServiceRef, error)
+	GetSession(ctx context.Context, sessionID string) (Session, error)
+}
+
+type Session struct {
+	SessionID string
+	UserID    string
+	TenantID  string
+	Role      string
+	ExpiresAt time.Time
 }
 
 type ScheduledReport struct {

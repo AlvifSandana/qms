@@ -1,4 +1,5 @@
 const adminBase = document.getElementById("adminBase");
+const sessionIdInput = document.getElementById("sessionId");
 const tenantIdInput = document.getElementById("tenantId");
 const roleSelect = document.getElementById("role");
 const userIdInput = document.getElementById("userId");
@@ -129,8 +130,10 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 function headers() {
+  const sessionId = sessionIdInput.value.trim();
   return {
     "Content-Type": "application/json",
+    ...(sessionId ? { Authorization: `Bearer ${sessionId}` } : {}),
     "X-Role": roleSelect.value,
     "X-User-ID": userIdInput.value.trim(),
     "X-Tenant-ID": tenantIdInput.value.trim(),

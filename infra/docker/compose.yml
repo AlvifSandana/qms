@@ -20,5 +20,81 @@ services:
     environment:
       DB_DSN: postgres://qms:qms@postgres:5432/qms?sslmode=disable
 
+  queue-service:
+    build:
+      context: ../../services/queue-service
+    env_file:
+      - ../../.env
+    environment:
+      PORT: "8080"
+      DB_DSN: postgres://qms:qms@postgres:5432/qms?sslmode=disable
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+
+  auth-service:
+    build:
+      context: ../../services/auth-service
+    env_file:
+      - ../../.env
+    environment:
+      AUTH_PORT: "8081"
+      DB_DSN: postgres://qms:qms@postgres:5432/qms?sslmode=disable
+    depends_on:
+      - postgres
+    ports:
+      - "8081:8081"
+
+  notification-service:
+    build:
+      context: ../../services/notification-service
+    env_file:
+      - ../../.env
+    environment:
+      NOTIF_PORT: "8082"
+      DB_DSN: postgres://qms:qms@postgres:5432/qms?sslmode=disable
+    depends_on:
+      - postgres
+
+  admin-service:
+    build:
+      context: ../../services/admin-service
+    env_file:
+      - ../../.env
+    environment:
+      ADMIN_PORT: "8083"
+      DB_DSN: postgres://qms:qms@postgres:5432/qms?sslmode=disable
+    depends_on:
+      - postgres
+    ports:
+      - "8083:8083"
+
+  analytics-service:
+    build:
+      context: ../../services/analytics-service
+    env_file:
+      - ../../.env
+    environment:
+      ANALYTICS_PORT: "8084"
+      DB_DSN: postgres://qms:qms@postgres:5432/qms?sslmode=disable
+    depends_on:
+      - postgres
+    ports:
+      - "8084:8084"
+
+  realtime-service:
+    build:
+      context: ../../services/realtime-service
+    env_file:
+      - ../../.env
+    environment:
+      REALTIME_PORT: "8085"
+      DB_DSN: postgres://qms:qms@postgres:5432/qms?sslmode=disable
+    depends_on:
+      - postgres
+    ports:
+      - "8085:8085"
+
 volumes:
   qms_pgdata:

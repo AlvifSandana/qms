@@ -918,6 +918,24 @@ func (s *Store) SetApprovalPrefs(ctx context.Context, tenantID string, enabled b
 	return err
 }
 
+func (s *Store) GetSession(ctx context.Context, sessionID string) (store.Session, error) {
+	var session store.Session
+	row := s.pool.QueryRow(ctx, `
+		SELECT s.session_id, s.user_id, s.expires_at, u.tenant_id, r.name
+		FROM sessions s
+		JOIN users u ON u.user_id = s.user_id
+		JOIN roles r ON r.role_id = u.role_id
+		WHERE s.session_id = $1 AND s.expires_at > NOW()
+	`, sessionID)
+	if err := row.Scan(&session.SessionID, &session.UserID, &session.ExpiresAt, &session.TenantID, &session.Role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return store.Session{}, store.ErrSessionNotFound
+		}
+		return store.Session{}, err
+	}
+	return session, nil
+}
+
 func nullIfEmpty(value string) interface{} {
 	if value == "" {
 		return nil

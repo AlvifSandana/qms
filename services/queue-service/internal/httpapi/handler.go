@@ -74,7 +74,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/counters", h.handleCounters)
 	mux.HandleFunc("/api/counters/", h.handleCounterStatus)
 	mux.HandleFunc("/api/services", h.handleServices)
-	return mux
+	return AuthMiddleware(h.store, mux)
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -216,6 +216,15 @@ func (h *Handler) handleCallNext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, req.RequestID, http.StatusBadRequest, "invalid_request", "request_id, tenant_id, branch_id, service_id, and counter_id must be UUIDs")
 		return
 	}
+	if !requireTenant(w, r, req.TenantID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
+		return
+	}
+	if !requireServiceAccess(w, r, req.ServiceID) {
+		return
+	}
 
 	input := store.CallNextInput{
 		RequestID: req.RequestID,
@@ -255,6 +264,15 @@ func (h *Handler) handleTicketSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	if !isValidUUID(tenantID) || !isValidUUID(branchID) || !isValidUUID(serviceID) {
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id, branch_id, and service_id must be UUIDs")
+		return
+	}
+	if !requireTenant(w, r, tenantID) {
+		return
+	}
+	if !requireBranchAccess(w, r, branchID) {
+		return
+	}
+	if !requireServiceAccess(w, r, serviceID) {
 		return
 	}
 
@@ -297,6 +315,12 @@ func (h *Handler) handleAppointmentCheckin(w http.ResponseWriter, r *http.Reques
 		writeError(w, payload.RequestID, http.StatusBadRequest, "invalid_request", "ids must be UUIDs")
 		return
 	}
+	if !requireTenant(w, r, payload.TenantID) {
+		return
+	}
+	if !requireBranchAccess(w, r, payload.BranchID) {
+		return
+	}
 
 	ticket, err := h.store.CheckInAppointment(r.Context(), payload.RequestID, payload.TenantID, payload.BranchID, payload.AppointmentID)
 	if err != nil {
@@ -322,6 +346,12 @@ func (h *Handler) handleActiveTicket(w http.ResponseWriter, r *http.Request) {
 	}
 	if !isValidUUID(tenantID) || !isValidUUID(branchID) || !isValidUUID(counterID) {
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id, branch_id, and counter_id must be UUIDs")
+		return
+	}
+	if !requireTenant(w, r, tenantID) {
+		return
+	}
+	if !requireBranchAccess(w, r, branchID) {
 		return
 	}
 
@@ -352,6 +382,9 @@ func (h *Handler) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if !isValidUUID(tenantID) {
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
+		return
+	}
+	if !requireTenant(w, r, tenantID) {
 		return
 	}
 
@@ -402,6 +435,12 @@ func (h *Handler) handleCounters(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id must be UUIDs")
 		return
 	}
+	if !requireTenant(w, r, tenantID) {
+		return
+	}
+	if !requireBranchAccess(w, r, branchID) {
+		return
+	}
 
 	counters, err := h.store.ListCounters(r.Context(), tenantID, branchID)
 	if err != nil {
@@ -445,6 +484,12 @@ func (h *Handler) handleCounterStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if payload.Status == "" {
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "status is required")
+		return
+	}
+	if !requireTenant(w, r, payload.TenantID) {
+		return
+	}
+	if !requireBranchAccess(w, r, payload.BranchID) {
 		return
 	}
 
@@ -557,6 +602,9 @@ func (h *Handler) handleGetTicket(w http.ResponseWriter, r *http.Request, ticket
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id and branch_id must be UUIDs")
 		return
 	}
+	if !requireTenant(w, r, tenantID) {
+		return
+	}
 	ticket, found, err := h.store.GetTicket(r.Context(), tenantID, branchID, ticketID)
 	if err != nil {
 		status, code, msg := mapError(err)
@@ -578,6 +626,9 @@ func (h *Handler) handleTicketEvents(w http.ResponseWriter, r *http.Request, tic
 	}
 	if !isValidUUID(tenantID) {
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
+		return
+	}
+	if !requireTenant(w, r, tenantID) {
 		return
 	}
 	events, err := h.store.ListTicketEvents(r.Context(), tenantID, ticketID)
@@ -609,6 +660,19 @@ func (h *Handler) handleQueues(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "", http.StatusBadRequest, "invalid_request", "service_id must be a UUID when provided")
 		return
 	}
+	if !requireTenant(w, r, tenantID) {
+		return
+	}
+	if !requireBranchAccess(w, r, branchID) {
+		return
+	}
+	if info, ok := accessFromContext(r.Context()); ok && len(info.Services) > 0 && serviceID == "" {
+		writeError(w, "", http.StatusForbidden, "access_denied", "service access denied")
+		return
+	}
+	if serviceID != "" && !requireServiceAccess(w, r, serviceID) {
+		return
+	}
 	tickets, err := h.store.ListQueue(r.Context(), tenantID, branchID, serviceID)
 	if err != nil {
 		status, code, msg := mapError(err)
@@ -637,6 +701,33 @@ type transferRequest struct {
 func (h *Handler) handleStartServing(w http.ResponseWriter, r *http.Request, ticketID string) {
 	var req ticketActionRequest
 	if !decodeRequest(w, r, &req) {
+		return
+	}
+	if !requireTenant(w, r, req.TenantID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
+		return
+	}
+	if !requireBranchAccess(w, r, req.BranchID) {
 		return
 	}
 	req.CounterID = strings.TrimSpace(req.CounterID)
@@ -670,6 +761,9 @@ func (h *Handler) handleCompleteTicket(w http.ResponseWriter, r *http.Request, t
 	if !decodeRequest(w, r, &req) {
 		return
 	}
+	if !requireTenant(w, r, req.TenantID) {
+		return
+	}
 
 	ticket, _, err := h.store.CompleteTicket(r.Context(), store.TicketActionInput{
 		RequestID:  req.RequestID,
@@ -689,6 +783,9 @@ func (h *Handler) handleCompleteTicket(w http.ResponseWriter, r *http.Request, t
 func (h *Handler) handleCancelTicket(w http.ResponseWriter, r *http.Request, ticketID string) {
 	var req ticketActionRequest
 	if !decodeRequest(w, r, &req) {
+		return
+	}
+	if !requireTenant(w, r, req.TenantID) {
 		return
 	}
 
@@ -712,6 +809,9 @@ func (h *Handler) handleRecallTicket(w http.ResponseWriter, r *http.Request, tic
 	if !decodeRequest(w, r, &req) {
 		return
 	}
+	if !requireTenant(w, r, req.TenantID) {
+		return
+	}
 
 	ticket, _, err := h.store.RecallTicket(r.Context(), store.TicketActionInput{
 		RequestID:  req.RequestID,
@@ -731,6 +831,9 @@ func (h *Handler) handleRecallTicket(w http.ResponseWriter, r *http.Request, tic
 func (h *Handler) handleHoldTicket(w http.ResponseWriter, r *http.Request, ticketID string) {
 	var req ticketActionRequest
 	if !decodeRequest(w, r, &req) {
+		return
+	}
+	if !requireTenant(w, r, req.TenantID) {
 		return
 	}
 
@@ -754,6 +857,9 @@ func (h *Handler) handleUnholdTicket(w http.ResponseWriter, r *http.Request, tic
 	if !decodeRequest(w, r, &req) {
 		return
 	}
+	if !requireTenant(w, r, req.TenantID) {
+		return
+	}
 
 	ticket, _, err := h.store.UnholdTicket(r.Context(), store.TicketActionInput{
 		RequestID:  req.RequestID,
@@ -775,6 +881,9 @@ func (h *Handler) handleTransferTicket(w http.ResponseWriter, r *http.Request, t
 	if !decodeRequest(w, r, &req) {
 		return
 	}
+	if !requireTenant(w, r, req.TenantID) {
+		return
+	}
 	req.ToServiceID = strings.TrimSpace(req.ToServiceID)
 	if req.ToServiceID == "" {
 		writeError(w, req.RequestID, http.StatusBadRequest, "invalid_request", "to_service_id is required")
@@ -782,6 +891,9 @@ func (h *Handler) handleTransferTicket(w http.ResponseWriter, r *http.Request, t
 	}
 	if !isValidUUID(req.ToServiceID) {
 		writeError(w, req.RequestID, http.StatusBadRequest, "invalid_request", "to_service_id must be a UUID")
+		return
+	}
+	if !requireServiceAccess(w, r, req.ToServiceID) {
 		return
 	}
 
@@ -806,6 +918,9 @@ func (h *Handler) handleTransferTicket(w http.ResponseWriter, r *http.Request, t
 func (h *Handler) handleNoShowTicket(w http.ResponseWriter, r *http.Request, ticketID string) {
 	var req ticketActionRequest
 	if !decodeRequest(w, r, &req) {
+		return
+	}
+	if !requireTenant(w, r, req.TenantID) {
 		return
 	}
 

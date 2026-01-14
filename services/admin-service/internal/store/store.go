@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"qms/admin-service/internal/models"
 )
@@ -65,4 +66,13 @@ type Store interface {
 	ApprovalsEnabled(ctx context.Context, tenantID string) (bool, error)
 	GetApprovalPrefs(ctx context.Context, tenantID string) (bool, error)
 	SetApprovalPrefs(ctx context.Context, tenantID string, enabled bool) error
+	GetSession(ctx context.Context, sessionID string) (Session, error)
+}
+
+type Session struct {
+	SessionID string
+	UserID    string
+	TenantID  string
+	Role      string
+	ExpiresAt time.Time
 }

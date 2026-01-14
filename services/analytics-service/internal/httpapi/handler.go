@@ -24,7 +24,8 @@ type Options struct {
 }
 
 type errorResponse struct {
-	Error responseError `json:"error"`
+	RequestID string        `json:"request_id"`
+	Error     responseError `json:"error"`
 }
 
 type responseError struct {
@@ -47,7 +48,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/analytics/anomalies", h.handleAnomalies)
 	mux.HandleFunc("/api/analytics/bi/tickets", h.handleBITickets)
 	mux.HandleFunc("/api/analytics/telemetry", h.handleTelemetry)
-	return mux
+	return AuthMiddleware(h.store, mux)
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +71,7 @@ func (h *Handler) handleKPIs(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.store.GetKPIs(r.Context(), params.tenantID, params.branchID, params.serviceID, params.from, params.to)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -88,7 +89,7 @@ func (h *Handler) handleRealtime(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.store.GetRealtime(r.Context(), params.tenantID, params.branchID, params.serviceID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -106,7 +107,7 @@ func (h *Handler) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.store.ListTickets(r.Context(), params.tenantID, params.branchID, params.serviceID, params.from, params.to)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 
@@ -133,12 +134,16 @@ func (h *Handler) handleReports(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 		if !isValidUUID(tenantID) {
-			writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+			return
+		}
+		if session, ok := authFromContext(r.Context()); ok && session.TenantID != tenantID {
+			writeError(w, r, http.StatusForbidden, "access_denied", "tenant access denied")
 			return
 		}
 		reports, err := h.store.ListScheduledReports(r.Context(), tenantID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 			return
 		}
 		writeJSON(w, http.StatusOK, reports)
@@ -154,15 +159,19 @@ func (h *Handler) handleReports(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&payload); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+			writeError(w, r, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
 			return
 		}
 		if !isValidUUID(payload.TenantID) || !isValidUUID(payload.BranchID) || !isValidUUID(payload.ServiceID) || payload.Cron == "" || payload.Channel == "" || payload.Recipient == "" {
-			writeError(w, http.StatusBadRequest, "invalid_request", "missing required fields")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "missing required fields")
+			return
+		}
+		if session, ok := authFromContext(r.Context()); ok && session.TenantID != payload.TenantID {
+			writeError(w, r, http.StatusForbidden, "access_denied", "tenant access denied")
 			return
 		}
 		if err := h.store.CreateScheduledReport(r.Context(), payload.TenantID, payload.BranchID, payload.ServiceID, payload.Cron, payload.Channel, payload.Recipient); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -178,12 +187,16 @@ func (h *Handler) handleAnomalies(w http.ResponseWriter, r *http.Request) {
 	}
 	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 	if !isValidUUID(tenantID) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id is required")
+		return
+	}
+	if session, ok := authFromContext(r.Context()); ok && session.TenantID != tenantID {
+		writeError(w, r, http.StatusForbidden, "access_denied", "tenant access denied")
 		return
 	}
 	anomalies, err := h.store.ListAnomalies(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 	writeJSON(w, http.StatusOK, anomalies)
@@ -196,11 +209,11 @@ func (h *Handler) handleBITickets(w http.ResponseWriter, r *http.Request) {
 	}
 	token := h.opts.BIAPIToken
 	if token == "" {
-		writeError(w, http.StatusForbidden, "bi_disabled", "BI connector is disabled")
+		writeError(w, r, http.StatusForbidden, "bi_disabled", "BI connector is disabled")
 		return
 	}
 	if !hasBIToken(r, token) {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid token")
+		writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid token")
 		return
 	}
 	params, ok := parseParams(w, r)
@@ -209,7 +222,7 @@ func (h *Handler) handleBITickets(w http.ResponseWriter, r *http.Request) {
 	}
 	tickets, err := h.store.ListTickets(r.Context(), params.tenantID, params.branchID, params.serviceID, params.from, params.to)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 	writeJSON(w, http.StatusOK, tickets)
@@ -224,7 +237,7 @@ func (h *Handler) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+		writeError(w, r, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
 		return
 	}
 	_ = payload
@@ -259,8 +272,14 @@ func parseParams(w http.ResponseWriter, r *http.Request) (queryParams, bool) {
 	toRaw := strings.TrimSpace(r.URL.Query().Get("to"))
 
 	if !isValidUUID(tenantID) || !isValidUUID(branchID) || !isValidUUID(serviceID) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id, branch_id, service_id are required")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id, branch_id, service_id are required")
 		return queryParams{}, false
+	}
+	if session, ok := authFromContext(r.Context()); ok {
+		if session.TenantID != tenantID {
+			writeError(w, r, http.StatusForbidden, "access_denied", "tenant access denied")
+			return queryParams{}, false
+		}
 	}
 
 	from := time.Now().Add(-24 * time.Hour)
@@ -268,7 +287,7 @@ func parseParams(w http.ResponseWriter, r *http.Request) (queryParams, bool) {
 	if fromRaw != "" {
 		parsed, err := time.Parse(time.RFC3339, fromRaw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "from must be RFC3339")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "from must be RFC3339")
 			return queryParams{}, false
 		}
 		from = parsed
@@ -276,7 +295,7 @@ func parseParams(w http.ResponseWriter, r *http.Request) (queryParams, bool) {
 	if toRaw != "" {
 		parsed, err := time.Parse(time.RFC3339, toRaw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "to must be RFC3339")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "to must be RFC3339")
 			return queryParams{}, false
 		}
 		to = parsed
@@ -292,8 +311,12 @@ func formatTime(value *time.Time) string {
 	return value.Format(time.RFC3339)
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorResponse{Error: responseError{Code: code, Message: message}})
+func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	requestID := ""
+	if r != nil {
+		requestID = strings.TrimSpace(r.Header.Get("X-Request-ID"))
+	}
+	writeJSON(w, status, errorResponse{RequestID: requestID, Error: responseError{Code: code, Message: message}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {

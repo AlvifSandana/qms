@@ -1786,3 +1786,69 @@ func nullStringPtr(value sql.NullString) *string {
 	}
 	return &value.String
 }
+
+func (s *Store) GetSession(ctx context.Context, sessionID string) (store.Session, error) {
+	var session store.Session
+	row := s.pool.QueryRow(ctx, `
+		SELECT s.session_id, s.user_id, s.expires_at, u.tenant_id, r.name
+		FROM sessions s
+		JOIN users u ON u.user_id = s.user_id
+		JOIN roles r ON r.role_id = u.role_id
+		WHERE s.session_id = $1 AND s.expires_at > NOW()
+	`, sessionID)
+	if err := row.Scan(&session.SessionID, &session.UserID, &session.ExpiresAt, &session.TenantID, &session.Role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return store.Session{}, store.ErrSessionNotFound
+		}
+		return store.Session{}, err
+	}
+	return session, nil
+}
+
+func (s *Store) GetAccess(ctx context.Context, userID string) ([]string, []string, error) {
+	branchRows, err := s.pool.Query(ctx, `
+		SELECT branch_id
+		FROM user_branch_access
+		WHERE user_id = $1
+	`, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer branchRows.Close()
+
+	var branches []string
+	for branchRows.Next() {
+		var branchID string
+		if err := branchRows.Scan(&branchID); err != nil {
+			return nil, nil, err
+		}
+		branches = append(branches, branchID)
+	}
+	if err := branchRows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	serviceRows, err := s.pool.Query(ctx, `
+		SELECT service_id
+		FROM user_service_access
+		WHERE user_id = $1
+	`, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer serviceRows.Close()
+
+	var services []string
+	for serviceRows.Next() {
+		var serviceID string
+		if err := serviceRows.Scan(&serviceID); err != nil {
+			return nil, nil, err
+		}
+		services = append(services, serviceID)
+	}
+	if err := serviceRows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	return branches, services, nil
+}

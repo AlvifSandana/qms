@@ -1,4 +1,5 @@
 const analyticsBase = document.getElementById("analyticsBase");
+const sessionIdInput = document.getElementById("sessionId");
 const tenantIdInput = document.getElementById("tenantId");
 const branchIdInput = document.getElementById("branchId");
 const serviceIdInput = document.getElementById("serviceId");
@@ -78,6 +79,15 @@ function baseUrl() {
   return analyticsBase.value.replace(/\/$/, "");
 }
 
+function authHeaders(extra = {}) {
+  const headers = { ...extra };
+  const sessionId = sessionIdInput.value.trim();
+  if (sessionId) {
+    headers.Authorization = `Bearer ${sessionId}`;
+  }
+  return headers;
+}
+
 function queryParams() {
   const tenantId = tenantIdInput.value.trim();
   const branchId = branchIdInput.value.trim();
@@ -92,7 +102,9 @@ function queryParams() {
 }
 
 async function api(path) {
-  const response = await fetch(`${baseUrl()}${path}`);
+  const response = await fetch(`${baseUrl()}${path}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     const msg = body?.error?.message || body?.error?.code || response.statusText;
@@ -237,7 +249,7 @@ async function createReport() {
   };
   const response = await fetch(`${baseUrl()}/api/analytics/reports`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
@@ -251,7 +263,7 @@ async function createReport() {
   await refreshReports();
 }
 
-function exportCsv() {
+async function exportCsv() {
   const params = queryParams();
   if (!params.tenantId || !params.branchId || !params.serviceId) {
     setAlert("Tenant, branch, and service IDs are required for export.");
@@ -264,7 +276,19 @@ function exportCsv() {
     from: params.from,
     to: params.to,
   });
-  window.location.href = `${baseUrl()}/api/analytics/export?${search.toString()}`;
+  const response = await fetch(`${baseUrl()}/api/analytics/export?${search.toString()}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    setAlert("Failed to export CSV.");
+    return;
+  }
+  const blob = await response.blob();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "report.csv";
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 async function previewCsv() {
@@ -280,7 +304,9 @@ async function previewCsv() {
     from: params.from,
     to: params.to,
   });
-  const response = await fetch(`${baseUrl()}/api/analytics/export?${search.toString()}`);
+  const response = await fetch(`${baseUrl()}/api/analytics/export?${search.toString()}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) {
     setAlert("Failed to load preview.");
     return;

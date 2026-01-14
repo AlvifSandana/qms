@@ -13,4 +13,5 @@ var (
 	ErrCounterUnavailable = errors.New("counter unavailable")
 	ErrAccessDenied       = errors.New("access denied")
 	ErrHolidayClosed      = errors.New("holiday closed")
+	ErrSessionNotFound    = errors.New("session not found")
 )

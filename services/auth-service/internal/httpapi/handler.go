@@ -51,7 +51,8 @@ type userInfo struct {
 }
 
 type errorResponse struct {
-	Error responseError `json:"error"`
+	RequestID string        `json:"request_id"`
+	Error     responseError `json:"error"`
 }
 
 type responseError struct {
@@ -93,7 +94,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+		writeError(w, r, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
 		return
 	}
 
@@ -103,15 +104,15 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	req.BranchID = strings.TrimSpace(req.BranchID)
 
 	if req.TenantID == "" || req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id, email, and password are required")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id, email, and password are required")
 		return
 	}
 	if !isValidUUID(req.TenantID) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
 		return
 	}
 	if req.BranchID != "" && !isValidUUID(req.BranchID) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "branch_id must be a UUID")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "branch_id must be a UUID")
 		return
 	}
 
@@ -124,11 +125,11 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, store.ErrInvalidCredentials):
-			writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
+			writeError(w, r, http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
 		case errors.Is(err, store.ErrAccessDenied):
-			writeError(w, http.StatusForbidden, "access_denied", "access to branch denied")
+			writeError(w, r, http.StatusForbidden, "access_denied", "access to branch denied")
 		default:
-			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		}
 		return
 	}
@@ -164,7 +165,7 @@ func (h *Handler) handleSSO(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+		writeError(w, r, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
 		return
 	}
 
@@ -173,17 +174,17 @@ func (h *Handler) handleSSO(w http.ResponseWriter, r *http.Request) {
 	payload.Subject = strings.TrimSpace(payload.Subject)
 	payload.Email = strings.TrimSpace(payload.Email)
 	if payload.TenantID == "" || payload.Provider == "" || payload.Subject == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id, provider, subject are required")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id, provider, subject are required")
 		return
 	}
 	if !isValidUUID(payload.TenantID) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
 		return
 	}
 
 	result, err := h.store.SSOLogin(r.Context(), payload.TenantID, payload.Provider, payload.Subject, payload.Email)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 
@@ -215,36 +216,36 @@ func (h *Handler) handleJWTSSO(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+		writeError(w, r, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
 		return
 	}
 
 	payload.TenantID = strings.TrimSpace(payload.TenantID)
 	payload.Token = strings.TrimSpace(payload.Token)
 	if payload.TenantID == "" || payload.Token == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id and token are required")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id and token are required")
 		return
 	}
 	if !isValidUUID(payload.TenantID) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id must be a UUID")
 		return
 	}
 
 	secret := os.Getenv("AUTH_SSO_JWT_SECRET")
 	if secret == "" {
-		writeError(w, http.StatusInternalServerError, "config_missing", "AUTH_SSO_JWT_SECRET is not set")
+		writeError(w, r, http.StatusInternalServerError, "config_missing", "AUTH_SSO_JWT_SECRET is not set")
 		return
 	}
 	issuer := strings.TrimSpace(os.Getenv("AUTH_SSO_JWT_ISSUER"))
 	subject, email, err := validateJWT(payload.Token, []byte(secret), issuer)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_token", "invalid SSO token")
+		writeError(w, r, http.StatusUnauthorized, "invalid_token", "invalid SSO token")
 		return
 	}
 
 	result, err := h.store.SSOLogin(r.Context(), payload.TenantID, "jwt", subject, email)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 
@@ -273,14 +274,14 @@ func (h *Handler) handleSAMLSSO(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
+		writeError(w, r, http.StatusBadRequest, "invalid_json", "invalid JSON payload")
 		return
 	}
 
 	req.TenantID = strings.TrimSpace(req.TenantID)
 	req.Assertion = strings.TrimSpace(req.Assertion)
 	if !isValidUUID(req.TenantID) || req.Assertion == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "tenant_id and assertion are required")
+		writeError(w, r, http.StatusBadRequest, "invalid_request", "tenant_id and assertion are required")
 		return
 	}
 
@@ -291,13 +292,13 @@ func (h *Handler) handleSAMLSSO(w http.ResponseWriter, r *http.Request) {
 
 	nameID, err := extractSAMLNameID(decoded)
 	if err != nil || nameID == "" {
-		writeError(w, http.StatusUnauthorized, "invalid_assertion", "invalid SAML assertion")
+		writeError(w, r, http.StatusUnauthorized, "invalid_assertion", "invalid SAML assertion")
 		return
 	}
 
 	result, err := h.store.SSOLogin(r.Context(), req.TenantID, "saml", nameID, nameID)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid SSO credentials")
+		writeError(w, r, http.StatusUnauthorized, "invalid_credentials", "invalid SSO credentials")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -332,23 +333,23 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 
 	sessionID := strings.TrimSpace(bearerToken(r.Header.Get("Authorization")))
 	if sessionID == "" {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "missing session token")
+		writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing session token")
 		return
 	}
 
 	session, user, err := h.store.GetSession(r.Context(), sessionID)
 	if err != nil {
 		if errors.Is(err, store.ErrSessionNotFound) {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session")
+			writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid session")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 
 	branches, services, err := h.store.GetAccess(r.Context(), user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 
@@ -382,8 +383,12 @@ func bearerToken(header string) string {
 	return parts[1]
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorResponse{Error: responseError{Code: code, Message: message}})
+func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	requestID := ""
+	if r != nil {
+		requestID = strings.TrimSpace(r.Header.Get("X-Request-ID"))
+	}
+	writeJSON(w, status, errorResponse{RequestID: requestID, Error: responseError{Code: code, Message: message}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {

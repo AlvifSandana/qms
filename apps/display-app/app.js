@@ -1,5 +1,7 @@
 const state = {
   queueBase: "http://localhost:8080",
+  realtimeBase: "http://localhost:8085",
+  sessionId: "",
   tenantId: "",
   branchId: "",
   areaId: "",
@@ -13,6 +15,8 @@ const state = {
 };
 
 const queueBaseInput = document.getElementById("queueBase");
+const realtimeBaseInput = document.getElementById("realtimeBase");
+const sessionIdInput = document.getElementById("sessionId");
 const tenantInput = document.getElementById("tenantId");
 const branchInput = document.getElementById("branchId");
 const deviceInput = document.getElementById("deviceId");
@@ -173,12 +177,22 @@ function matchFilter(payload) {
   return true;
 }
 
+function authHeaders(extra = {}) {
+  const headers = { ...extra };
+  if (state.sessionId) {
+    headers.Authorization = `Bearer ${state.sessionId}`;
+  }
+  return headers;
+}
+
 async function loadSnapshot() {
   if (!state.tenantId || !state.branchId || state.serviceIds.length === 0) {
     return;
   }
   for (const serviceId of state.serviceIds) {
-    const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${serviceId}`);
+    const response = await fetch(`${state.queueBase}/api/tickets/snapshot?tenant_id=${state.tenantId}&branch_id=${state.branchId}&service_id=${serviceId}`, {
+      headers: authHeaders(),
+    });
     if (!response.ok) {
       continue;
     }
@@ -208,7 +222,9 @@ async function pollEvents() {
     return;
   }
   const afterParam = state.lastAfter ? `&after=${encodeURIComponent(state.lastAfter)}` : "";
-  const response = await fetch(`${state.queueBase}/api/events?tenant_id=${state.tenantId}${afterParam}&limit=50`);
+  const response = await fetch(`${state.queueBase}/api/events?tenant_id=${state.tenantId}${afterParam}&limit=50`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) {
     setStatus("Disconnected");
     sendDeviceStatus("offline");
@@ -224,6 +240,8 @@ async function pollEvents() {
 
 function connect() {
   state.queueBase = queueBaseInput.value.trim();
+  state.realtimeBase = realtimeBaseInput.value.trim();
+  state.sessionId = sessionIdInput.value.trim();
   state.tenantId = tenantInput.value.trim();
   state.branchId = branchInput.value.trim();
   state.areaId = areaInput.value.trim();
@@ -255,7 +273,18 @@ function connectSockJS() {
   }
   sockets.forEach((item) => item.close());
   sockets = [];
-  const endpoint = `${state.queueBase}/realtime`;
+  if (!state.sessionId) {
+    setAlert("Session required for realtime. Using polling.");
+    if (pollInterval) {
+      clearInterval(pollInterval);
+    }
+    pollInterval = setInterval(() => {
+      pollEvents().catch(() => setStatus("Disconnected"));
+    }, 5000);
+    return;
+  }
+  const sessionParam = encodeURIComponent(state.sessionId);
+  const endpoint = `${state.realtimeBase}/realtime?session_id=${sessionParam}`;
   if (state.serviceIds.length === 0) {
     return;
   }
